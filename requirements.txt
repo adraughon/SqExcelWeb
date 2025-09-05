@@ -3,3 +3,6 @@ uvicorn==0.24.0
 requests==2.31.0
 mangum==0.17.0
 pydantic==2.5.0
+seeq>=1.0.0
+pandas>=1.5.0
+python-dateutil>=2.8.0

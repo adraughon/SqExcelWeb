@@ -246,7 +246,11 @@ async def get_active_sessions():
         logger.error(f"Error getting session info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Vercel handler is now in api/index.py
+# Vercel handler
+def handler(request):
+    """Vercel serverless function handler"""
+    from mangum import Mangum
+    return Mangum(app)(request)
 
 if __name__ == "__main__":
     import uvicorn

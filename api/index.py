@@ -4,6 +4,9 @@ This file serves as the entry point for Vercel serverless functions
 """
 
 from main import app
+from mangum import Mangum
 
-# Vercel expects the app to be available as 'app'
-# The main.py file contains the FastAPI app
+# Create the ASGI handler for Vercel
+handler = Mangum(app, lifespan="off")
+
+# Vercel expects the handler to be available as 'handler'
