@@ -8,6 +8,7 @@ import secrets
 import logging
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
+from datetime import datetime
 
 # Configure logging for production
 logging.basicConfig(
