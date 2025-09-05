@@ -126,8 +126,9 @@ auth_state = {
     'ignore_ssl_errors': False
 }
 
-# Session-based credential storage (more secure than global variables)
-# In production, consider using Redis or a database for session storage
+# Global credential storage for Excel functions
+# Note: In production, consider using Redis or a database for better scalability
+temp_credentials = None
 
 def authenticate_seeq(url: str, access_key: str, password: str, 
                      auth_provider: str = 'Seeq', 
@@ -865,11 +866,11 @@ def seeq_data():
 @app.route('/api/seeq/credentials', methods=['GET'])
 def get_credentials():
     """Get stored credentials for Excel functions"""
-    credentials = session.get('seeq_credentials')
-    if credentials:
+    global temp_credentials
+    if temp_credentials:
         return jsonify({
             "success": True,
-            "credentials": credentials
+            "credentials": temp_credentials
         })
     else:
         return jsonify({
@@ -898,7 +899,7 @@ def update_credentials():
                 "error": "URL, access key, and password are required"
             }), 400
         
-        # Store credentials in session for Excel functions to use
+        # Store credentials globally for Excel functions to use
         credentials = {
             "url": url,
             "accessKey": access_key,
@@ -908,7 +909,8 @@ def update_credentials():
             "timestamp": timestamp or datetime.now().isoformat()
         }
         
-        session['seeq_credentials'] = credentials
+        global temp_credentials
+        temp_credentials = credentials
         logger.info(f"Credentials stored successfully for URL: {url}")
         
         return jsonify({
@@ -927,7 +929,8 @@ def update_credentials():
 def clear_credentials():
     """Clear stored credentials"""
     try:
-        session.pop('seeq_credentials', None)
+        global temp_credentials
+        temp_credentials = None
         return jsonify({
             "success": True,
             "message": "Credentials cleared successfully"
@@ -1036,13 +1039,13 @@ def sensor_data_excel():
 @app.route('/api/seeq/auth/status', methods=['GET'])
 def auth_status():
     """Get authentication status"""
-    credentials = session.get('seeq_credentials')
-    if credentials:
+    global temp_credentials
+    if temp_credentials:
         return jsonify({
             "success": True,
             "isAuthenticated": True,
             "message": "Credentials available",
-            "credentials": credentials
+            "credentials": temp_credentials
         })
     else:
         return jsonify({
@@ -1082,8 +1085,11 @@ def python_auth_status():
             "error": str(e)
         }), 500
 
+# Production deployment uses Gunicorn via Procfile
+# For local development, you can still run: python app.py
 if __name__ == '__main__':
     import os
     from datetime import datetime
     port = int(os.environ.get('PORT', 5000))
+    print("⚠️  WARNING: Running in development mode. For production, use Gunicorn.")
     app.run(host='0.0.0.0', port=port, debug=False)
