@@ -26,12 +26,7 @@ app = FastAPI(
 # Configure CORS for Office add-ins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://adraughon.github.io",
-        "https://*.vercel.app",
-        "http://localhost:3000",  # For development
-        "https://localhost:3000"  # For development
-    ],
+    allow_origins=["*"],  # Allow all origins for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -129,6 +124,15 @@ async def health_check():
         "service": "SqExcelWeb Proxy"
     }
 
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint for debugging"""
+    return {
+        "message": "Test endpoint is working",
+        "timestamp": datetime.utcnow().isoformat(),
+        "status": "ok"
+    }
+
 @app.post("/api/seeq/test-connection", response_model=ConnectionTestResponse)
 async def test_connection(request: ConnectionTestRequest):
     """Test connection to Seeq server"""
@@ -175,7 +179,7 @@ async def test_connection(request: ConnectionTestRequest):
             success=False,
             message=f"Unexpected error: {str(e)}",
             error=str(e),
-            server_url=request.url
+            server_url=request.seeq_url
         )
 
 @app.post("/api/seeq/auth", response_model=SeeqAuthResponse)
@@ -538,9 +542,3 @@ async def get_sensor_data(request: SeeqDataRequest):
                 "grid": request.grid
             }
         )
-
-# Vercel handler is now in api/index.py
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
