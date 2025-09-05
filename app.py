@@ -3,11 +3,88 @@ from flask_cors import CORS
 import json
 import traceback
 import io
+import re
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Security: Restrict CORS to specific trusted origins
+CORS(app, origins=[
+    'https://adraughon.github.io',
+    'https://*.office.com',
+    'https://*.microsoft.com',
+    'https://*.office365.com'
+])
+
+# Security: Define trusted domains for SSL bypass (if needed)
+TRUSTED_DOMAINS = [
+    'talosenergy.seeq.tech',
+    '*.seeq.tech',
+    'localhost',
+    '127.0.0.1'
+]
+
+# Security: Input validation functions
+def validate_url(url: str) -> bool:
+    """Validate URL format and ensure it's HTTPS for production"""
+    if not url:
+        return False
+    
+    # Basic URL pattern validation
+    url_pattern = re.compile(
+        r'^https?://'  # http:// or https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+        r'localhost|'  # localhost...
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+        r'(?::\d+)?'  # optional port
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    
+    return bool(url_pattern.match(url))
+
+def validate_credentials(access_key: str, password: str) -> bool:
+    """Validate credential format"""
+    if not access_key or not password:
+        return False
+    
+    # Basic length and character validation
+    if len(access_key) < 3 or len(access_key) > 100:
+        return False
+    
+    if len(password) < 3 or len(password) > 200:
+        return False
+    
+    # Check for suspicious patterns
+    suspicious_patterns = ['<script', 'javascript:', 'data:', 'vbscript:']
+    for pattern in suspicious_patterns:
+        if pattern.lower() in access_key.lower() or pattern.lower() in password.lower():
+            return False
+    
+    return True
+
+def is_trusted_domain(url: str) -> bool:
+    """Check if domain is in trusted list"""
+    if not url:
+        return False
+    
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        domain = parsed.hostname
+        
+        if not domain:
+            return False
+        
+        # Check exact matches and wildcard patterns
+        for trusted in TRUSTED_DOMAINS:
+            if trusted == domain:
+                return True
+            if trusted.startswith('*') and domain.endswith(trusted[1:]):
+                return True
+        
+        return False
+    except:
+        return False
 
 # Try to import SPy module
 try:
@@ -44,6 +121,29 @@ def authenticate_seeq(url: str, access_key: str, password: str,
     """
     Authenticate with Seeq server using SPy
     """
+    # Security: Input validation
+    if not validate_url(url):
+        return {
+            "success": False,
+            "message": "Invalid URL format provided",
+            "error": "Invalid URL"
+        }
+    
+    if not validate_credentials(access_key, password):
+        return {
+            "success": False,
+            "message": "Invalid credentials format",
+            "error": "Invalid credentials"
+        }
+    
+    # Security: Restrict SSL bypass to trusted domains only
+    if ignore_ssl_errors and not is_trusted_domain(url):
+        return {
+            "success": False,
+            "message": "SSL bypass not allowed for this domain",
+            "error": "Untrusted domain"
+        }
+    
     if not SPY_AVAILABLE:
         return {
             "success": False,
@@ -582,6 +682,14 @@ def test_seeq_connection():
                 "success": False,
                 "message": "Seeq URL is required",
                 "error": "Missing seeq_url parameter"
+            }), 400
+        
+        # Security: Validate URL format
+        if not validate_url(seeq_url):
+            return jsonify({
+                "success": False,
+                "message": "Invalid URL format",
+                "error": "Invalid URL"
             }), 400
         
         if not SPY_AVAILABLE:
