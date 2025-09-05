@@ -4,9 +4,10 @@ This serverless FastAPI application acts as a proxy between Office Excel add-ins
 It eliminates CORS issues by handling all Seeq API calls server-side.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ValidationError
 from typing import Optional, Dict, Any
 import requests
 import hashlib
@@ -22,6 +23,20 @@ app = FastAPI(
     description="FastAPI proxy for Seeq authentication from Office Excel add-ins",
     version="1.0.0"
 )
+
+# Add exception handler for validation errors
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    logger.error(f"Validation error: {exc}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "message": f"Validation error: {exc}",
+            "error": "ValidationError",
+            "details": exc.errors()
+        }
+    )
 
 # Configure CORS for Office add-ins
 app.add_middleware(
@@ -133,20 +148,56 @@ async def test_endpoint():
         "status": "ok"
     }
 
-@app.post("/api/seeq/test-connection", response_model=ConnectionTestResponse)
+@app.post("/test-post")
+async def test_post_endpoint(request: dict):
+    """Simple POST test endpoint for debugging"""
+    return {
+        "message": "POST test endpoint is working",
+        "received_data": request,
+        "timestamp": datetime.utcnow().isoformat(),
+        "status": "ok"
+    }
+
+@app.post("/api/seeq/test-connection-raw")
+async def test_connection_raw(request: Request):
+    """Raw test connection endpoint for debugging"""
+    try:
+        body = await request.json()
+        logger.info(f"Raw request body: {body}")
+        
+        return {
+            "success": True,
+            "message": "Raw endpoint received request",
+            "received_data": body,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error in raw endpoint: {e}")
+        return {
+            "success": False,
+            "message": f"Error: {str(e)}",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+@app.post("/api/seeq/test-connection")
 async def test_connection(request: ConnectionTestRequest):
     """Test connection to Seeq server"""
     try:
         logger.info(f"Testing connection to Seeq server: {request.seeq_url}")
+        logger.info(f"Request received: {request}")
         
         # Test basic connectivity to the Seeq server
         test_url = f"{request.seeq_url.rstrip('/')}/api/system/open-ping"
+        logger.info(f"Testing URL: {test_url}")
         
         response = requests.get(
             test_url,
             timeout=10,
             verify=not request.seeq_url.startswith('http://')  # Skip SSL verification for HTTP
         )
+        
+        logger.info(f"Response status: {response.status_code}")
+        logger.info(f"Response headers: {dict(response.headers)}")
         
         if response.status_code == 200:
             logger.info(f"Connection test successful for {request.seeq_url}")
