@@ -62,8 +62,36 @@ def main():
         })
     ]
     
+    # Test Excel compatibility endpoints
+    excel_tests = [
+        ('/api/seeq/credentials', 'GET'),
+        ('/api/seeq/credentials', 'POST', {
+            'url': 'https://example-seeq-server.com',
+            'accessKey': 'test_user',
+            'password': 'test_password',
+            'authProvider': 'Seeq',
+            'ignoreSslErrors': False
+        }),
+        ('/api/seeq/auth/status', 'GET'),
+        ('/api/seeq/auth/python-status', 'GET'),
+        ('/api/seeq/search-sensors', 'POST', {
+            'sensorNames': ['sensor1', 'sensor2'],
+            'url': 'https://example-seeq-server.com',
+            'accessKey': 'test_user',
+            'password': 'test_password'
+        }),
+        ('/api/seeq/sensor-data', 'POST', {
+            'sensorNames': ['sensor1', 'sensor2'],
+            'startDatetime': '2024-01-01T00:00:00Z',
+            'endDatetime': '2024-01-01T23:59:59Z',
+            'url': 'https://example-seeq-server.com',
+            'accessKey': 'test_user',
+            'password': 'test_password'
+        })
+    ]
+    
     success_count = 0
-    total_tests = len(tests) + len(seeq_tests)
+    total_tests = len(tests) + len(seeq_tests) + len(excel_tests)
     
     # Test basic endpoints
     for endpoint, method in tests:
@@ -72,6 +100,17 @@ def main():
     
     # Test Seeq proxy endpoints
     for test in seeq_tests:
+        if len(test) == 2:
+            endpoint, method = test
+            data = None
+        else:
+            endpoint, method, data = test
+        
+        if test_endpoint(base_url, endpoint, method, data):
+            success_count += 1
+    
+    # Test Excel compatibility endpoints
+    for test in excel_tests:
         if len(test) == 2:
             endpoint, method = test
             data = None

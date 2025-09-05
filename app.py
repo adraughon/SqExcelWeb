@@ -1,13 +1,24 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 import json
 import traceback
 import io
 import re
+import secrets
+import logging
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 
+# Configure logging for production
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
+# Set a secret key for session management
+app.secret_key = secrets.token_hex(32)
 
 # Security: Restrict CORS to specific trusted origins
 CORS(app, origins=[
@@ -114,6 +125,9 @@ auth_state = {
     'auth_provider': 'Seeq',
     'ignore_ssl_errors': False
 }
+
+# Session-based credential storage (more secure than global variables)
+# In production, consider using Redis or a database for session storage
 
 def authenticate_seeq(url: str, access_key: str, password: str, 
                      auth_provider: str = 'Seeq', 
@@ -845,6 +859,227 @@ def seeq_data():
             "success": False,
             "message": f"Proxy error: {str(e)}",
             "error": "Internal server error"
+        }), 500
+
+# Excel function compatibility endpoints
+@app.route('/api/seeq/credentials', methods=['GET'])
+def get_credentials():
+    """Get stored credentials for Excel functions"""
+    credentials = session.get('seeq_credentials')
+    if credentials:
+        return jsonify({
+            "success": True,
+            "credentials": credentials
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "error": "No credentials stored"
+        }), 404
+
+@app.route('/api/seeq/credentials', methods=['POST'])
+def update_credentials():
+    """Update stored credentials for Excel functions"""
+    try:
+        data = request.get_json()
+        url = data.get('url')
+        access_key = data.get('accessKey')
+        password = data.get('password')
+        auth_provider = data.get('authProvider', 'Seeq')
+        ignore_ssl_errors = data.get('ignoreSslErrors', False)
+        timestamp = data.get('timestamp')
+        
+        logger.info(f"Credentials update request for URL: {url}")
+        
+        if not all([url, access_key, password]):
+            logger.warning("Credentials update failed: missing required fields")
+            return jsonify({
+                "success": False,
+                "error": "URL, access key, and password are required"
+            }), 400
+        
+        # Store credentials in session for Excel functions to use
+        credentials = {
+            "url": url,
+            "accessKey": access_key,
+            "password": password,
+            "authProvider": auth_provider,
+            "ignoreSslErrors": ignore_ssl_errors,
+            "timestamp": timestamp or datetime.now().isoformat()
+        }
+        
+        session['seeq_credentials'] = credentials
+        logger.info(f"Credentials stored successfully for URL: {url}")
+        
+        return jsonify({
+            "success": True,
+            "message": "Credentials updated successfully",
+            "credentials": credentials
+        })
+    except Exception as e:
+        logger.error(f"Credentials update error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/seeq/credentials', methods=['DELETE'])
+def clear_credentials():
+    """Clear stored credentials"""
+    try:
+        session.pop('seeq_credentials', None)
+        return jsonify({
+            "success": True,
+            "message": "Credentials cleared successfully"
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/seeq/search-sensors', methods=['POST'])
+def search_sensors_excel():
+    """Search for sensors - Excel function compatibility endpoint"""
+    try:
+        data = request.get_json()
+        sensor_names = data.get('sensorNames', [])
+        url = data.get('url')
+        access_key = data.get('accessKey')
+        password = data.get('password')
+        auth_provider = data.get('authProvider', 'Seeq')
+        ignore_ssl_errors = data.get('ignoreSslErrors', False)
+        
+        if not sensor_names or not isinstance(sensor_names, list):
+            return jsonify({
+                "success": False,
+                "error": "Sensor names array is required"
+            }), 400
+        
+        if not all([url, access_key, password]):
+            return jsonify({
+                "success": False,
+                "error": "Authentication credentials are required"
+            }), 400
+        
+        if not SPY_AVAILABLE:
+            return jsonify({
+                "success": False,
+                "message": "SPy module not available. Cannot search Seeq.",
+                "error": "SPy module not found"
+            }), 500
+        
+        # Use SPy to search for sensors
+        result = search_sensors_only(sensor_names, url, access_key, password, auth_provider, ignore_ssl_errors)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Proxy error: {str(e)}",
+            "error": "Internal server error"
+        }), 500
+
+@app.route('/api/seeq/sensor-data', methods=['POST'])
+def sensor_data_excel():
+    """Get sensor data - Excel function compatibility endpoint"""
+    try:
+        data = request.get_json()
+        sensor_names = data.get('sensorNames', [])
+        start_datetime = data.get('startDatetime')
+        end_datetime = data.get('endDatetime')
+        grid = data.get('grid', '15min')
+        url = data.get('url')
+        access_key = data.get('accessKey')
+        password = data.get('password')
+        auth_provider = data.get('authProvider', 'Seeq')
+        ignore_ssl_errors = data.get('ignoreSslErrors', False)
+        
+        if not all([sensor_names, start_datetime, end_datetime]):
+            return jsonify({
+                "success": False,
+                "error": "Sensor names, start datetime, and end datetime are required"
+            }), 400
+        
+        if not all([url, access_key, password]):
+            return jsonify({
+                "success": False,
+                "error": "Authentication credentials are required"
+            }), 400
+        
+        if not SPY_AVAILABLE:
+            return jsonify({
+                "success": False,
+                "message": "SPy module not available. Cannot retrieve data from Seeq.",
+                "error": "SPy module not found"
+            }), 500
+        
+        # Use SPy to search and pull sensor data
+        result = search_and_pull_sensors(sensor_names, start_datetime, end_datetime, grid, None, url, access_key, password, auth_provider, ignore_ssl_errors)
+        
+        if result['success']:
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Proxy error: {str(e)}",
+            "error": "Internal server error"
+        }), 500
+
+@app.route('/api/seeq/auth/status', methods=['GET'])
+def auth_status():
+    """Get authentication status"""
+    credentials = session.get('seeq_credentials')
+    if credentials:
+        return jsonify({
+            "success": True,
+            "isAuthenticated": True,
+            "message": "Credentials available",
+            "credentials": credentials
+        })
+    else:
+        return jsonify({
+            "success": True,
+            "isAuthenticated": False,
+            "message": "Use SEEQ_AUTH function to authenticate"
+        })
+
+@app.route('/api/seeq/auth/python-status', methods=['GET'])
+def python_auth_status():
+    """Get Python/SPy authentication status"""
+    try:
+        if not SPY_AVAILABLE:
+            return jsonify({
+                "success": False,
+                "message": "SPy module not available",
+                "error": "SPy module not found"
+            }), 500
+        
+        # Check if we have a user authenticated
+        if spy.user is not None:
+            return jsonify({
+                "success": True,
+                "isAuthenticated": True,
+                "user": str(spy.user),
+                "message": "Python authentication active"
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "isAuthenticated": False,
+                "message": "Python not authenticated"
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
         }), 500
 
 if __name__ == '__main__':
