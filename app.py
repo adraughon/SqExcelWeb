@@ -13,9 +13,13 @@ CORS(app)  # Enable CORS for all routes
 try:
     from seeq import spy
     SPY_AVAILABLE = True
-except ImportError:
+    print("✅ SPy module successfully imported")
+except ImportError as e:
     SPY_AVAILABLE = False
     spy = None
+    print(f"❌ SPy module not available: {e}")
+    print("💡 To install SPy: pip install seeq-spy[all]")
+    print("💡 Note: SPy requires a valid Seeq license and may need special installation")
 
 # Global authentication state
 auth_state = {
