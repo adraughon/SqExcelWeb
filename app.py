@@ -18,8 +18,15 @@ except ImportError as e:
     SPY_AVAILABLE = False
     spy = None
     print(f"❌ SPy module not available: {e}")
+    print(f"❌ Import error details: {type(e).__name__}: {str(e)}")
     print("💡 To install SPy: pip install seeq-spy[all]")
     print("💡 Note: SPy requires a valid Seeq license and may need special installation")
+except Exception as e:
+    SPY_AVAILABLE = False
+    spy = None
+    print(f"❌ Unexpected error importing SPy: {e}")
+    print(f"❌ Error type: {type(e).__name__}")
+    print("💡 This might be a licensing or dependency issue")
 
 # Global authentication state
 auth_state = {
@@ -525,6 +532,42 @@ def test_endpoint():
         "proxy_status": "operational",
         "spy_available": SPY_AVAILABLE
     })
+
+@app.route('/debug/spy')
+def debug_spy():
+    """Debug endpoint to check SPy installation status"""
+    import sys
+    import subprocess
+    
+    debug_info = {
+        "spy_available": SPY_AVAILABLE,
+        "python_version": sys.version,
+        "python_path": sys.executable,
+        "installed_packages": []
+    }
+    
+    # Try to get list of installed packages
+    try:
+        result = subprocess.run([sys.executable, '-m', 'pip', 'list'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            debug_info["installed_packages"] = result.stdout.split('\n')[:20]  # First 20 packages
+    except Exception as e:
+        debug_info["pip_error"] = str(e)
+    
+    # Try to import seeq-spy specifically
+    try:
+        import seeq
+        debug_info["seeq_module_available"] = True
+        debug_info["seeq_version"] = getattr(seeq, '__version__', 'Unknown')
+    except ImportError as e:
+        debug_info["seeq_module_available"] = False
+        debug_info["seeq_import_error"] = str(e)
+    except Exception as e:
+        debug_info["seeq_module_available"] = False
+        debug_info["seeq_other_error"] = str(e)
+    
+    return jsonify(debug_info)
 
 # Seeq API proxy endpoints
 @app.route('/api/seeq/test-connection', methods=['POST'])
