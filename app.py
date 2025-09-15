@@ -614,19 +614,15 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                             try:
                                 import pytz
                                 local_tz = pytz.timezone(user_timezone)
-                                print(f"Original timezone-aware timestamp: {obj}")
-                                print(f"Converting to timezone: {user_timezone}")
+                                # Convert to user's timezone, then make naive
                                 naive_obj = obj.tz_convert(local_tz).tz_localize(None)
-                                print(f"After conversion to local timezone: {naive_obj}")
                             except Exception as e:
-                                print(f"Timezone conversion failed: {e}")
                                 # Fallback to UTC if timezone conversion fails
                                 naive_obj = obj.tz_convert('UTC').tz_localize(None)
                         else:
                             # Fallback to UTC if no user timezone
                             naive_obj = obj.tz_convert('UTC').tz_localize(None)
                         result = naive_obj.strftime('%Y-%m-%d %H:%M:%S')
-                        print(f"Final result: {result}")
                     else:
                         # If no timezone, format directly (already in local timezone)
                         result = obj.strftime('%Y-%m-%d %H:%M:%S')
