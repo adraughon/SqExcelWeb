@@ -137,11 +137,8 @@ def authenticate_seeq(url: str, access_key: str, password: str,
     """
     Authenticate with Seeq server using SPy
     """
-    print(f"DEBUG: Authentication attempt - URL: {url}, Access Key: {access_key[:5]}..., Auth Provider: {auth_provider}, Ignore SSL: {ignore_ssl_errors}")
-    
     # Security: Input validation
     if not validate_url(url):
-        print(f"DEBUG: URL validation failed for: {url}")
         return {
             "success": False,
             "message": "Invalid URL format provided",
@@ -149,7 +146,6 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         }
     
     if not validate_credentials(access_key, password):
-        print(f"DEBUG: Credential validation failed - Access Key length: {len(access_key)}, Password length: {len(password)}")
         return {
             "success": False,
             "message": "Invalid credentials format",
@@ -158,7 +154,6 @@ def authenticate_seeq(url: str, access_key: str, password: str,
     
     # Security: Restrict SSL bypass to trusted domains only
     if ignore_ssl_errors and not is_trusted_domain(url):
-        print(f"DEBUG: SSL bypass not allowed for domain: {url}")
         return {
             "success": False,
             "message": "SSL bypass not allowed for this domain",
@@ -209,7 +204,6 @@ def authenticate_seeq(url: str, access_key: str, password: str,
             ignore_ssl_errors = False
         
         # Suppress SPy output during login
-        print(f"DEBUG: Attempting SPy login with URL: {url}")
         try:
             with redirect_stdout(io.StringIO()):
                 # Attempt to login
@@ -219,9 +213,7 @@ def authenticate_seeq(url: str, access_key: str, password: str,
                     password=password,
                     ignore_ssl_errors=ignore_ssl_errors
                 )
-            print(f"DEBUG: SPy login completed, checking spy.user: {spy.user}")
         except Exception as login_error:
-            print(f"DEBUG: SPy login failed with exception: {login_error}")
             return {
                 "success": False,
                 "message": f"SPy login failed: {str(login_error)}",
