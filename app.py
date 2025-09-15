@@ -598,7 +598,6 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
             
             # Clean NaN values and convert timestamps for JSON serialization
             def clean_for_json(obj):
-                print(f"clean_for_json called with user_timezone: {user_timezone}")
                 if isinstance(obj, dict):
                     return {k: clean_for_json(v) for k, v in obj.items()}
                 elif isinstance(obj, list):
@@ -616,16 +615,20 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                                 import pytz
                                 local_tz = pytz.timezone(user_timezone)
                                 naive_obj = obj.tz_convert(local_tz).tz_localize(None)
-                            except:
+                                print(f"Converted timezone-aware timestamp: {obj} -> {naive_obj}")
+                            except Exception as e:
+                                print(f"Timezone conversion failed: {e}")
                                 # Fallback to UTC if timezone conversion fails
                                 naive_obj = obj.tz_convert('UTC').tz_localize(None)
                         else:
                             # Fallback to UTC if no user timezone
                             naive_obj = obj.tz_convert('UTC').tz_localize(None)
                         result = naive_obj.strftime('%Y-%m-%d %H:%M:%S')
+                        print(f"Final formatted timestamp: {result}")
                     else:
                         # If no timezone, format directly (already in local timezone)
                         result = obj.strftime('%Y-%m-%d %H:%M:%S')
+                        print(f"Naive timestamp formatted: {result}")
                     return result
                 else:
                     return obj
