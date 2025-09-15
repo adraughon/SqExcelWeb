@@ -185,6 +185,14 @@ def authenticate_seeq(url: str, access_key: str, password: str,
             # If compatibility option doesn't exist, continue without it
             pass
         
+        # Set timeout options to prevent hanging
+        try:
+            spy.options.request_timeout_in_seconds = 30
+            spy.options.retry_timeout_in_seconds = 10
+        except AttributeError:
+            # If timeout options don't exist, continue without them
+            pass
+        
         # Set the server URL in SPy options before attempting login
         try:
             if hasattr(spy, 'options') and hasattr(spy.options, 'server'):
@@ -202,15 +210,23 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         
         # Suppress SPy output during login
         print(f"DEBUG: Attempting SPy login with URL: {url}")
-        with redirect_stdout(io.StringIO()):
-            # Attempt to login
-            spy.login(
-                url=url,
-                access_key=access_key,
-                password=password,
-                ignore_ssl_errors=ignore_ssl_errors
-            )
-        print(f"DEBUG: SPy login completed, checking spy.user: {spy.user}")
+        try:
+            with redirect_stdout(io.StringIO()):
+                # Attempt to login
+                spy.login(
+                    url=url,
+                    access_key=access_key,
+                    password=password,
+                    ignore_ssl_errors=ignore_ssl_errors
+                )
+            print(f"DEBUG: SPy login completed, checking spy.user: {spy.user}")
+        except Exception as login_error:
+            print(f"DEBUG: SPy login failed with exception: {login_error}")
+            return {
+                "success": False,
+                "message": f"SPy login failed: {str(login_error)}",
+                "error": str(login_error)
+            }
         
         # Check if login was successful
         if spy.user is not None:
