@@ -344,8 +344,8 @@ def search_sensors_only(sensor_names: list, url: str = None, access_key: str = N
         }
 
 def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetime: str, 
-                           grid: str = '15min', timezone: str = None, url: str = None, 
-                           access_key: str = None, password: str = None, 
+                           grid: str = '15min', timezone: str = None, user_timezone: str = None, 
+                           url: str = None, access_key: str = None, password: str = None, 
                            auth_provider: str = 'Seeq', ignore_ssl_errors: bool = False) -> Dict[str, Any]:
     """
     Search for sensors in Seeq and pull their data
@@ -458,12 +458,34 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                 
             # Apply timezone if specified
             if timezone:
-                start_dt = start_dt.tz_localize('UTC').tz_convert(timezone)
-                end_dt = end_dt.tz_localize('UTC').tz_convert(timezone)
+                # If timezone is explicitly provided, use it
+                if start_dt.tz is None:
+                    start_dt = start_dt.tz_localize('UTC').tz_convert(timezone)
+                    end_dt = end_dt.tz_localize('UTC').tz_convert(timezone)
+                else:
+                    start_dt = start_dt.tz_convert(timezone)
+                    end_dt = end_dt.tz_convert(timezone)
             elif start_dt.tz is None:
-                # If no timezone specified, assume UTC for consistency
-                start_dt = start_dt.tz_localize('UTC')
-                end_dt = end_dt.tz_localize('UTC')
+                # If no timezone specified and dates are naive, treat them as user's local timezone
+                # This prevents Seeq from treating them as UTC and causing offset issues
+                if user_timezone:
+                    try:
+                        import pytz
+                        # Use the user's actual timezone from the frontend
+                        local_tz = pytz.timezone(user_timezone)
+                        print(f"Applying user timezone '{user_timezone}' to naive dates")
+                        start_dt = start_dt.tz_localize(local_tz)
+                        end_dt = end_dt.tz_localize(local_tz)
+                        print(f"Localized dates - start: {start_dt}, end: {end_dt}")
+                    except Exception as e:
+                        # If timezone is invalid, fall back to UTC
+                        print(f"Warning: Invalid user timezone '{user_timezone}': {e}")
+                        start_dt = start_dt.tz_localize('UTC')
+                        end_dt = end_dt.tz_localize('UTC')
+                else:
+                    # If no user timezone provided, keep as naive (fallback behavior)
+                    print("No user timezone provided, keeping dates naive")
+                    pass
                 
         except Exception as e:
             return {
@@ -585,11 +607,11 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                 elif hasattr(obj, 'isoformat'):  # Handle pandas Timestamp objects
                     # Convert to Excel-friendly format: YYYY-MM-DD HH:MM:SS
                     if obj.tz is not None:
-                        # If timezone-aware, convert to UTC and format
-                        utc_obj = obj.tz_convert('UTC')
-                        result = utc_obj.strftime('%Y-%m-%d %H:%M:%S')
+                        # If timezone-aware, keep the original timezone for display
+                        # This preserves the user's expected local timezone
+                        result = obj.strftime('%Y-%m-%d %H:%M:%S')
                     else:
-                        # If no timezone, format directly
+                        # If no timezone, format directly (already in local timezone)
                         result = obj.strftime('%Y-%m-%d %H:%M:%S')
                     return result
                 else:
@@ -829,6 +851,7 @@ def seeq_data():
         start_time = data.get('start_time')
         end_time = data.get('end_time')
         grid = data.get('grid', '15min')
+        user_timezone = data.get('user_timezone')
         username = data.get('username')
         password = data.get('password')
         auth_provider = data.get('auth_provider', 'Seeq')
@@ -849,7 +872,8 @@ def seeq_data():
             }), 500
         
         # Use SPy to search and pull sensor data
-        result = search_and_pull_sensors(sensor_names, start_time, end_time, grid, None, seeq_url, username, password, auth_provider, ignore_ssl_errors)
+        logger.info(f"Processing data request with user_timezone: {user_timezone}")
+        result = search_and_pull_sensors(sensor_names, start_time, end_time, grid, None, user_timezone, seeq_url, username, password, auth_provider, ignore_ssl_errors)
         
         if result['success']:
             return jsonify(result)
@@ -1023,7 +1047,8 @@ def sensor_data_excel():
             }), 500
         
         # Use SPy to search and pull sensor data
-        result = search_and_pull_sensors(sensor_names, start_datetime, end_datetime, grid, None, url, access_key, password, auth_provider, ignore_ssl_errors)
+        user_timezone = data.get('userTimezone')
+        result = search_and_pull_sensors(sensor_names, start_datetime, end_datetime, grid, None, user_timezone, url, access_key, password, auth_provider, ignore_ssl_errors)
         
         if result['success']:
             return jsonify(result)
