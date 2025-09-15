@@ -180,7 +180,7 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         
         # Set compatibility option for maximum compatibility
         try:
-            spy.options.compatibility = 66
+            spy.options.compatibility = 188  # Use minimum required value
         except AttributeError:
             # If compatibility option doesn't exist, continue without it
             pass
@@ -201,6 +201,7 @@ def authenticate_seeq(url: str, access_key: str, password: str,
             ignore_ssl_errors = False
         
         # Suppress SPy output during login
+        print(f"DEBUG: Attempting SPy login with URL: {url}")
         with redirect_stdout(io.StringIO()):
             # Attempt to login
             spy.login(
@@ -209,6 +210,7 @@ def authenticate_seeq(url: str, access_key: str, password: str,
                 password=password,
                 ignore_ssl_errors=ignore_ssl_errors
             )
+        print(f"DEBUG: SPy login completed, checking spy.user: {spy.user}")
         
         # Check if login was successful
         if spy.user is not None:
