@@ -598,6 +598,7 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
             
             # Clean NaN values and convert timestamps for JSON serialization
             def clean_for_json(obj):
+                print(f"clean_for_json called with user_timezone: {user_timezone}")
                 if isinstance(obj, dict):
                     return {k: clean_for_json(v) for k, v in obj.items()}
                 elif isinstance(obj, list):
@@ -607,9 +608,21 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                 elif hasattr(obj, 'isoformat'):  # Handle pandas Timestamp objects
                     # Convert to Excel-friendly format: YYYY-MM-DD HH:MM:SS
                     if obj.tz is not None:
-                        # If timezone-aware, keep the original timezone for display
-                        # This preserves the user's expected local timezone
-                        result = obj.strftime('%Y-%m-%d %H:%M:%S')
+                        # If timezone-aware, convert to naive local time before formatting
+                        # This preserves the user's expected local timezone without timezone info
+                        # Convert to the user's timezone first, then make naive
+                        if user_timezone:
+                            try:
+                                import pytz
+                                local_tz = pytz.timezone(user_timezone)
+                                naive_obj = obj.tz_convert(local_tz).tz_localize(None)
+                            except:
+                                # Fallback to UTC if timezone conversion fails
+                                naive_obj = obj.tz_convert('UTC').tz_localize(None)
+                        else:
+                            # Fallback to UTC if no user timezone
+                            naive_obj = obj.tz_convert('UTC').tz_localize(None)
+                        result = naive_obj.strftime('%Y-%m-%d %H:%M:%S')
                     else:
                         # If no timezone, format directly (already in local timezone)
                         result = obj.strftime('%Y-%m-%d %H:%M:%S')
