@@ -241,8 +241,7 @@ def authenticate_and_search_with_session(url: str, auth_token: str, csrf_token: 
         }
 
 def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str, 
-                           sensor_name: str, workbook_id: str, worksheet_id: str,
-                           formula: str = None, formula_params: dict = None) -> Dict[str, Any]:
+                           sensor_name: str, workbook_id: str, worksheet_id: str) -> Dict[str, Any]:
     """
     Add a new signal to a Seeq worksheet using spy.push
     """
@@ -319,12 +318,7 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "error": "Sensor search failed"
             }
         
-        # Create the new signal with formula
-        if not formula:
-            formula = "$s"  # Default formula just references the original signal
-        
-        if not formula_params:
-            formula_params = {'$s': sensor_id}  # Default parameter mapping
+  # Default parameter mapping
         
         # Generate a unique name for the new signal
         new_signal_name = f"{sensor_name} Copy"
@@ -332,9 +326,8 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
         # Create the new signal metadata
         new_signal = pd.DataFrame([{
             'Name': new_signal_name,
-            'Type': 'Signal',
-            'Formula': formula,
-            'Formula Parameters': formula_params
+            'Type': 'StoredSignal',
+            'ID': sensor_id
         }])
         
         # Get all current items in the worksheet using the worksheet URL (like the working example)
@@ -505,8 +498,7 @@ def add_signal_to_worksheet_endpoint():
         worksheet_id = data.get('worksheetId')
         seeq_cookies = data.get('seeqCookies', '')
         csrf_token = data.get('csrfToken', '')
-        auth_token_explicit = data.get('authToken', '')  # Explicitly sent auth token from Chrome API        formula = data.get('formula')  # Optional custom formula
-        formula_params = data.get('formulaParams')  # Optional custom formula parameters
+        auth_token_explicit = data.get('authToken', '')  # Explicitly sent auth token from Chrome API
         
         # Debug: Log received authentication data
         logger.info(f"Chrome extension request - URL: {seeq_url}, Sensor: {sensor_name}")
@@ -572,7 +564,7 @@ def add_signal_to_worksheet_endpoint():
         # Add signal to worksheet using session authentication
         result = add_signal_to_worksheet(
             seeq_url, auth_token, csrf_token, sensor_name, 
-            workbook_id, worksheet_id, formula, formula_params
+            workbook_id, worksheet_id
         )
         
         if result['success']:
