@@ -12,6 +12,7 @@ from datetime import datetime
 
 # Import Chrome extension functionality
 from chrome_extension import chrome_bp
+from flask_cors import CORS as BlueprintCORS
 
 # Configure logging for production
 logging.basicConfig(
@@ -24,17 +25,27 @@ app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = secrets.token_hex(32)
 
+# Apply CORS to Chrome extension Blueprint before registration
+BlueprintCORS(chrome_bp, origins=[
+    'https://adraughon.github.io',
+    'https://*.office.com',
+    'https://*.microsoft.com',
+    'https://*.office365.com',
+    'https://*.seeq.tech',
+    'https://talosenergy.seeq.tech'
+])
+
 # Register Chrome extension Blueprint
 app.register_blueprint(chrome_bp)
 
-# Security: Restrict CORS to specific trusted origins
-# This applies to all routes including Blueprint routes
+# Security: Restrict CORS to specific trusted origins for main app routes
 CORS(app, origins=[
     'https://adraughon.github.io',
     'https://*.office.com',
     'https://*.microsoft.com',
     'https://*.office365.com',
     'https://*.seeq.tech',
+    'https://talosenergy.seeq.tech'
 ])
 
 # Security: Define trusted domains for SSL bypass (if needed)
