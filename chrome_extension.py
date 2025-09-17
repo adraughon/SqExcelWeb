@@ -554,8 +554,33 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                                 if worksheet is None and worksheets:
                                     worksheet = list(worksheets.values())[0]
                                     logger.info(f"⚠️ Using first available worksheet as fallback: {worksheet_names[0]}")
+                                    
+                            elif hasattr(worksheets, '__iter__') and hasattr(worksheets, '__len__'):
+                                # It's a WorksheetList (list-like object)
+                                logger.info(f"WorksheetList has {len(worksheets)} worksheets")
+                                
+                                # Iterate through the WorksheetList
+                                for i, ws_obj in enumerate(worksheets):
+                                    logger.info(f"Checking worksheet [{i}]: {type(ws_obj)}")
+                                    
+                                    # Log worksheet attributes
+                                    if hasattr(ws_obj, 'name'):
+                                        logger.info(f"Worksheet [{i}] name: {ws_obj.name}")
+                                    if hasattr(ws_obj, 'id'):
+                                        logger.info(f"Worksheet [{i}] ID: {ws_obj.id}")
+                                        if ws_obj.id == worksheet_id:
+                                            worksheet = ws_obj
+                                            logger.info(f"✅ Found worksheet by ID at index {i}")
+                                            break
+                                
+                                # If not found by ID, try first worksheet as fallback
+                                if worksheet is None and len(worksheets) > 0:
+                                    worksheet = worksheets[0]
+                                    logger.info(f"⚠️ Using first available worksheet as fallback: index 0")
+                                    
                             else:
-                                logger.warning(f"Worksheets object doesn't have keys() method: {type(worksheets)}")
+                                logger.warning(f"Worksheets object is neither dict-like nor list-like: {type(worksheets)}")
+                                logger.info(f"Worksheets attributes: {[attr for attr in dir(worksheets) if not attr.startswith('_')]}")
                         else:
                             logger.error("Workbook doesn't have 'worksheets' attribute")
                         
