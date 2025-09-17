@@ -412,8 +412,10 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             logger.info(f"SPy push result (Method 1): {result}")
             logger.info(f"SPy push result type: {type(result)}")
+            logger.info(f"SPy push completed successfully - Method 1")
             
-            # If Method 1 fails, try Method 2
+            # Method 1 succeeded, continue to success response
+            
         except Exception as method1_error:
             logger.error(f"Method 1 failed: {method1_error}")
             logger.info("=== METHOD 2: Fallback to original approach ===")
@@ -457,66 +459,69 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 logger.error(f"Method 2 also failed: {method2_error}")
                 raise method2_error
             
-            logger.info(f"SPy push completed successfully")
-            
-            # Prepare success response FIRST (before verification that might fail)
-            success_response = {
-                "success": True,
-                "message": f"Successfully added StoredSignal '{sensor_name}' to worksheet '{worksheet_name}'",
-                "signal_name": sensor_name,
-                "sensor_name": sensor_name,
-                "sensor_id": sensor_id,
-                "workbook_id": workbook_id,
-                "worksheet_id": worksheet_id,
-                "worksheet_name": worksheet_name,
-                "user": str(spy.user) if spy.user is not None else "Unknown"
-            }
-            
-            # Let's verify the signal was actually added by checking the worksheet again
-            # NOTE: This is just for verification - if it fails, we still return success since push worked
-            logger.info("Starting verification process...")
-            try:
-                if worksheet_url:
-                    logger.info(f"Searching worksheet at URL: {worksheet_url}")
-                    verification_signals = spy.search(worksheet_url, quiet=True)
-                    logger.info(f"Verification search completed. Type: {type(verification_signals)}")
-                    
-                    if verification_signals is not None:
-                        logger.info(f"Verification: Found {len(verification_signals)} signals after push")
-                        if not verification_signals.empty and 'Name' in verification_signals.columns:
-                            try:
-                                signal_names = verification_signals['Name'].tolist()
-                                logger.info(f"Signal names in worksheet: {signal_names}")
-                                
-                                # Check for both the original sensor name and the new signal name
-                                new_signal_name = f"{sensor_name} Copy"
-                                if sensor_name in signal_names or new_signal_name in signal_names:
-                                    logger.info(f"✅ Verified: Signal related to {sensor_name} is now in the worksheet")
-                                    success_response["verification"] = "success"
-                                else:
-                                    logger.warning(f"❌ Warning: Neither {sensor_name} nor {new_signal_name} found in worksheet after push")
-                                    success_response["verification"] = "not_found_in_verification"
-                            except Exception as name_error:
-                                logger.warning(f"Error processing signal names: {name_error}")
-                                success_response["verification"] = f"name_processing_error: {str(name_error)}"
-                        else:
-                            logger.warning("❌ Verification failed: No signals or no Name column")
-                            success_response["verification"] = "no_signals_or_no_name_column"
+            logger.info(f"SPy push completed successfully - Method 2")
+        
+        # Both Method 1 and Method 2 reach here if successful
+        logger.info(f"SPy push completed successfully")
+        
+        # Prepare success response FIRST (before verification that might fail)
+        success_response = {
+            "success": True,
+            "message": f"Successfully added StoredSignal '{sensor_name}' to worksheet '{worksheet_name}'",
+            "signal_name": sensor_name,
+            "sensor_name": sensor_name,
+            "sensor_id": sensor_id,
+            "workbook_id": workbook_id,
+            "worksheet_id": worksheet_id,
+            "worksheet_name": worksheet_name,
+            "user": str(spy.user) if spy.user is not None else "Unknown"
+        }
+        
+        # Let's verify the signal was actually added by checking the worksheet again
+        # NOTE: This is just for verification - if it fails, we still return success since push worked
+        logger.info("Starting verification process...")
+        try:
+            if worksheet_url:
+                logger.info(f"Searching worksheet at URL: {worksheet_url}")
+                verification_signals = spy.search(worksheet_url, quiet=True)
+                logger.info(f"Verification search completed. Type: {type(verification_signals)}")
+                
+                if verification_signals is not None:
+                    logger.info(f"Verification: Found {len(verification_signals)} signals after push")
+                    if not verification_signals.empty and 'Name' in verification_signals.columns:
+                        try:
+                            signal_names = verification_signals['Name'].tolist()
+                            logger.info(f"Signal names in worksheet: {signal_names}")
+                            
+                            # Check for both the original sensor name and the new signal name
+                            new_signal_name = f"{sensor_name} Copy"
+                            if sensor_name in signal_names or new_signal_name in signal_names:
+                                logger.info(f"✅ Verified: Signal related to {sensor_name} is now in the worksheet")
+                                success_response["verification"] = "success"
+                            else:
+                                logger.warning(f"❌ Warning: Neither {sensor_name} nor {new_signal_name} found in worksheet after push")
+                                success_response["verification"] = "not_found_in_verification"
+                        except Exception as name_error:
+                            logger.warning(f"Error processing signal names: {name_error}")
+                            success_response["verification"] = f"name_processing_error: {str(name_error)}"
                     else:
-                        logger.warning("❌ Verification failed: verification_signals is None")
-                        success_response["verification"] = "verification_signals_none"
+                        logger.warning("❌ Verification failed: No signals or no Name column")
+                        success_response["verification"] = "no_signals_or_no_name_column"
                 else:
-                    logger.warning("❌ Cannot verify: worksheet_url is None")
-                    success_response["verification"] = "worksheet_url_none"
-                    
-            except Exception as e:
-                logger.warning(f"Could not verify signal addition: {e}")
-                logger.warning(f"Verification error details: {traceback.format_exc()}")
-                success_response["verification"] = f"verification_error: {str(e)}"
-            
-            logger.info("Verification process completed, returning success response")
-            
-            return success_response
+                    logger.warning("❌ Verification failed: verification_signals is None")
+                    success_response["verification"] = "verification_signals_none"
+            else:
+                logger.warning("❌ Cannot verify: worksheet_url is None")
+                success_response["verification"] = "worksheet_url_none"
+                
+        except Exception as e:
+            logger.warning(f"Could not verify signal addition: {e}")
+            logger.warning(f"Verification error details: {traceback.format_exc()}")
+            success_response["verification"] = f"verification_error: {str(e)}"
+        
+        logger.info("Verification process completed, returning success response")
+        
+        return success_response
             
         except Exception as e:
             return {
