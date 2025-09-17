@@ -363,48 +363,97 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # Use the exact pattern from the working example
-        logger.info(f"Signal to add: {signal_to_add.to_dict('records')}")
+        # CRITICAL DIFFERENCE: The working script creates a NEW signal with a formula, not just adding the existing signal
+        # Let's try the exact pattern from the working example
+        logger.info(f"Original signal to add: {signal_to_add.to_dict('records')}")
         
         try:
-            logger.info(f"Using exact pattern from working example")
+            logger.info(f"Trying the EXACT pattern from the working example")
             
-            # Combine current signals with new signal (exactly like working example)
-            metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
-            metadata = metadata.drop_duplicates(subset=['ID'])
+            # Method 1: Try the exact working pattern - create a new signal with formula
+            logger.info("=== METHOD 1: Exact working script pattern ===")
+            
+            # Create a new signal exactly like the working example
+            new_signal_name = f"{sensor_name} Copy"  # Like the working example
+            formula = "$s"  # Exact same formula
+            formula_params = {
+                '$s': sensor_id  # Use the sensor ID we found
+            }
+            
+            # Create the new signal DataFrame exactly like working example
+            new_signal = pd.DataFrame([{
+                'Name': new_signal_name,
+                'Type': 'Signal',  # Note: 'Signal', not 'StoredSignal'
+                'Formula': formula,
+                'Formula Parameters': formula_params
+            }])
+            
+            logger.info(f"New signal created: {new_signal.to_dict('records')}")
+            
+            # Combine with current signals exactly like working example
+            metadata = pd.concat([current_signals, new_signal]).reset_index(drop=True)
+            metadata = metadata.drop_duplicates(subset=['ID'])  # This will keep the new signal since it has no ID yet
             
             logger.info(f"Combined metadata shape: {metadata.shape}")
-            logger.info(f"Combined metadata has columns: {list(metadata.columns)}")
+            logger.info(f"Combined metadata columns: {list(metadata.columns)}")
+            logger.info(f"Combined metadata sample: {metadata.tail(2).to_dict('records')}")
             
-            # Extract only the columns that are common to both StoredSignals
-            # Based on your working example, try with minimal required columns first
-            essential_columns = ['Name', 'Type', 'ID']
+            # Use the exact push parameters from working example
+            logger.info("Pushing with exact working example parameters...")
+            result = spy.push(
+                metadata=metadata[['Name','Type','ID','Formula','Formula Parameters']], 
+                workbook=workbook_id, 
+                worksheet=worksheet_id,
+                errors='catalog',
+                quiet=True  # Working example uses quiet=True
+            )
             
-            # Check which essential columns exist
-            available_columns = [col for col in essential_columns if col in metadata.columns]
-            logger.info(f"Available essential columns: {available_columns}")
-            
-            if len(available_columns) >= 3:  # We have Name, Type, ID
-                logger.info(f"Pushing with essential columns: {available_columns}")
-                result = spy.push(
-                    metadata=metadata[available_columns],
-                    workbook=workbook_id,
-                    worksheet=worksheet_id,
-                    errors='catalog',
-                    quiet=False
-                )
-            else:
-                logger.info("Pushing with all available columns")
-                result = spy.push(
-                    metadata=metadata,
-                    workbook=workbook_id,
-                    worksheet=worksheet_id,
-                    errors='catalog',
-                    quiet=False
-                )
-            
-            logger.info(f"SPy push result: {result}")
+            logger.info(f"SPy push result (Method 1): {result}")
             logger.info(f"SPy push result type: {type(result)}")
+            
+            # If Method 1 fails, try Method 2
+        except Exception as method1_error:
+            logger.error(f"Method 1 failed: {method1_error}")
+            logger.info("=== METHOD 2: Fallback to original approach ===")
+            
+            try:
+                # Combine current signals with new signal (original approach)
+                metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
+                metadata = metadata.drop_duplicates(subset=['ID'])
+                
+                logger.info(f"Fallback metadata shape: {metadata.shape}")
+                logger.info(f"Fallback metadata columns: {list(metadata.columns)}")
+                
+                # Try with minimal columns
+                essential_columns = ['Name', 'Type', 'ID']
+                available_columns = [col for col in essential_columns if col in metadata.columns]
+                logger.info(f"Available essential columns: {available_columns}")
+                
+                if len(available_columns) >= 3:
+                    logger.info(f"Pushing with essential columns: {available_columns}")
+                    result = spy.push(
+                        metadata=metadata[available_columns],
+                        workbook=workbook_id,
+                        worksheet=worksheet_id,
+                        errors='catalog',
+                        quiet=False
+                    )
+                else:
+                    logger.info("Pushing with all available columns")
+                    result = spy.push(
+                        metadata=metadata,
+                        workbook=workbook_id,
+                        worksheet=worksheet_id,
+                        errors='catalog',
+                        quiet=False
+                    )
+                
+                logger.info(f"SPy push result (Method 2): {result}")
+                logger.info(f"SPy push result type: {type(result)}")
+                
+            except Exception as method2_error:
+                logger.error(f"Method 2 also failed: {method2_error}")
+                raise method2_error
             
             logger.info(f"SPy push completed successfully")
             
@@ -454,6 +503,146 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
         }
 
 # Chrome Extension Routes
+@chrome_bp.route('/debug-session-auth', methods=['POST'])
+def debug_session_auth():
+    """Debug endpoint to test session authentication and basic SPy operations"""
+    try:
+        data = request.get_json()
+        seeq_url = data.get('seeqUrl')
+        seeq_cookies = data.get('seeqCookies', '')
+        csrf_token = data.get('csrfToken', '')
+        auth_token_explicit = data.get('authToken', '')
+        workbook_id = data.get('workbookId')
+        worksheet_id = data.get('worksheetId')
+        
+        debug_info = {
+            "step": "initialization",
+            "seeq_url": seeq_url,
+            "csrf_token_present": bool(csrf_token),
+            "auth_token_present": bool(auth_token_explicit),
+            "cookies_length": len(seeq_cookies) if seeq_cookies else 0,
+            "workbook_id": workbook_id,
+            "worksheet_id": worksheet_id
+        }
+        
+        logger.info(f"Debug session auth request: {debug_info}")
+        
+        if not seeq_url:
+            return jsonify({
+                "success": False,
+                "message": "Missing seeqUrl",
+                "debug_info": debug_info
+            }), 400
+        
+        # Step 1: Test SPy import
+        try:
+            from seeq import spy
+            debug_info["spy_import"] = "success"
+            debug_info["step"] = "spy_imported"
+        except ImportError as e:
+            debug_info["spy_import"] = f"failed: {str(e)}"
+            return jsonify({
+                "success": False,
+                "message": "SPy import failed",
+                "debug_info": debug_info
+            }), 500
+        
+        # Step 2: Extract auth tokens
+        auth_token = auth_token_explicit
+        if not auth_token and seeq_cookies:
+            import re
+            auth_patterns = [
+                r'sq-auth=([^;]+)',
+                r'session-id=([^;]+)',
+                r'sessionId=([^;]+)',
+                r'JSESSIONID=([^;]+)'
+            ]
+            
+            for pattern in auth_patterns:
+                auth_match = re.search(pattern, seeq_cookies)
+                if auth_match:
+                    auth_token = auth_match.group(1)
+                    debug_info["auth_token_source"] = pattern
+                    break
+        
+        if not auth_token and csrf_token:
+            auth_token = csrf_token
+            debug_info["auth_token_source"] = "csrf_fallback"
+        
+        debug_info["final_auth_token_present"] = bool(auth_token)
+        debug_info["final_csrf_token_present"] = bool(csrf_token)
+        debug_info["step"] = "tokens_extracted"
+        
+        # Step 3: Test authentication
+        try:
+            logger.info(f"Testing SPy authentication with URL: {seeq_url}")
+            
+            if auth_token and auth_token != csrf_token:
+                spy.login(
+                    url=seeq_url,
+                    auth_token=auth_token,
+                    csrf_token=csrf_token,
+                    ignore_ssl_errors=True
+                )
+                debug_info["auth_method"] = "auth_token_and_csrf"
+            else:
+                spy.login(
+                    url=seeq_url,
+                    csrf_token=csrf_token,
+                    ignore_ssl_errors=True
+                )
+                debug_info["auth_method"] = "csrf_only"
+            
+            debug_info["authentication"] = "success"
+            debug_info["spy_user"] = str(spy.user) if spy.user else None
+            debug_info["step"] = "authenticated"
+            
+        except Exception as auth_error:
+            debug_info["authentication"] = f"failed: {str(auth_error)}"
+            debug_info["step"] = "auth_failed"
+            return jsonify({
+                "success": False,
+                "message": f"Authentication failed: {str(auth_error)}",
+                "debug_info": debug_info
+            }), 401
+        
+        # Step 4: Test basic search functionality
+        try:
+            # Test search for a common signal type
+            test_search = spy.search({'Type': 'StoredSignal'}, quiet=True)
+            debug_info["basic_search"] = f"success: found {len(test_search)} StoredSignals"
+            debug_info["step"] = "basic_search_completed"
+        except Exception as search_error:
+            debug_info["basic_search"] = f"failed: {str(search_error)}"
+            debug_info["step"] = "basic_search_failed"
+        
+        # Step 5: Test worksheet access if IDs provided
+        if workbook_id and worksheet_id:
+            try:
+                worksheet_url = f"{seeq_url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
+                worksheet_signals = spy.search(worksheet_url, quiet=True)
+                debug_info["worksheet_access"] = f"success: found {len(worksheet_signals)} items in worksheet"
+                debug_info["worksheet_columns"] = list(worksheet_signals.columns) if not worksheet_signals.empty else []
+                debug_info["step"] = "worksheet_access_completed"
+            except Exception as worksheet_error:
+                debug_info["worksheet_access"] = f"failed: {str(worksheet_error)}"
+                debug_info["step"] = "worksheet_access_failed"
+        
+        return jsonify({
+            "success": True,
+            "message": "Debug session completed successfully",
+            "debug_info": debug_info
+        })
+        
+    except Exception as e:
+        logger.error(f"Debug session error: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Debug session error: {str(e)}",
+            "error": "Internal server error",
+            "debug_info": debug_info if 'debug_info' in locals() else {}
+        }), 500
+
 @chrome_bp.route('/search-with-session', methods=['POST'])
 def search_with_session():
     """Search for sensors using Seeq session authentication (sq-csrf and sq-auth tokens)"""
