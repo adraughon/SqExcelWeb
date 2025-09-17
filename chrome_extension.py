@@ -318,13 +318,28 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "error": "Sensor search failed"
             }
         
-        # We're adding the existing StoredSignal directly to the worksheet
-        # Just create a minimal reference to add it to the worksheet
-        signal_to_add = pd.DataFrame([{
-            'Name': sensor_name,
-            'Type': 'StoredSignal', 
-            'ID': sensor_id
-        }])
+        # Get the full metadata of the sensor we want to add
+        try:
+            logger.info(f"Getting full metadata for sensor {sensor_id}")
+            sensor_metadata = spy.search({'ID': sensor_id}, quiet=True)
+            if sensor_metadata.empty:
+                return {
+                    "success": False,
+                    "message": f"Could not retrieve full metadata for sensor {sensor_id}",
+                    "error": "Sensor metadata not found"
+                }
+            
+            signal_to_add = sensor_metadata
+            logger.info(f"Retrieved sensor metadata with columns: {list(signal_to_add.columns)}")
+            logger.info(f"Sensor metadata: {signal_to_add.to_dict('records')[0] if len(signal_to_add) > 0 else 'Empty'}")
+            
+        except Exception as e:
+            logger.error(f"Failed to get sensor metadata: {str(e)}")
+            return {
+                "success": False,
+                "message": f"Failed to get sensor metadata: {str(e)}",
+                "error": "Metadata retrieval failed"
+            }
         
         # Get all current items in the worksheet using the worksheet URL (like the working example)
         try:
