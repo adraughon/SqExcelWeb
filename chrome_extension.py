@@ -348,17 +348,23 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             spy_workbook_id = spy.utils.get_workbook_id_from_url(worksheet_url)
             spy_worksheet_id = spy.utils.get_worksheet_id_from_url(worksheet_url)
             logger.info(f"SPy utility extracted - Workbook ID: {spy_workbook_id}, Worksheet ID: {spy_worksheet_id}")
+            logger.info(f"Chrome parsed - Workbook ID: {workbook_id}, Worksheet ID: {worksheet_id}")
             
-            # Use SPy-extracted IDs if they're different
+            # CRITICAL: Always use SPy-extracted IDs if available (like working script)
             if spy_workbook_id and spy_worksheet_id:
                 if spy_workbook_id != workbook_id or spy_worksheet_id != worksheet_id:
-                    logger.info(f"Using SPy-extracted IDs instead of Chrome-parsed IDs")
+                    logger.info(f"⚠️ ID MISMATCH DETECTED! Using SPy-extracted IDs instead of Chrome-parsed IDs")
+                    logger.info(f"Chrome: wb={workbook_id}, ws={worksheet_id}")
+                    logger.info(f"SPy: wb={spy_workbook_id}, ws={spy_worksheet_id}")
                     workbook_id = spy_workbook_id
                     worksheet_id = spy_worksheet_id
+                    # Rebuild worksheet URL with correct IDs
+                    worksheet_url = f"{url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
+                    logger.info(f"Updated worksheet URL: {worksheet_url}")
                 else:
-                    logger.info("SPy-extracted IDs match Chrome-parsed IDs")
+                    logger.info("✅ SPy-extracted IDs match Chrome-parsed IDs")
             else:
-                logger.info("SPy utilities returned empty IDs, keeping Chrome-parsed IDs")
+                logger.warning("⚠️ SPy utilities returned empty IDs, keeping Chrome-parsed IDs")
                 
         except Exception as spy_utils_error:
             logger.warning(f"SPy utilities failed: {spy_utils_error}")
@@ -376,6 +382,18 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             if not current_signals.empty:
                 logger.info(f"Existing items columns: {list(current_signals.columns)}")
                 logger.info(f"Existing items sample: {current_signals.head(2).to_dict('records') if len(current_signals) > 0 else 'No items'}")
+                
+                # CRITICAL INSIGHT: Maybe we need to filter current_signals to only the essential columns
+                # that the working script would have, to avoid column mismatch issues
+                essential_columns = ['Name', 'Type', 'ID', 'Formula', 'Formula Parameters']
+                available_essential = [col for col in essential_columns if col in current_signals.columns]
+                logger.info(f"Available essential columns in current signals: {available_essential}")
+                
+                # Keep only essential columns for consistency with working script
+                if len(available_essential) >= 3:  # Need at least Name, Type, ID
+                    current_signals = current_signals[available_essential].copy()
+                    logger.info(f"Filtered current_signals to essential columns: {list(current_signals.columns)}")
+                
             else:
                 logger.info("No existing worksheet items found")
                 
@@ -481,6 +499,58 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 logger.info(f"New signal from push result: Name={new_signal_result.get('Name', 'N/A')}, ID={new_signal_result.get('ID', 'N/A')}, Type={new_signal_result.get('Type', 'N/A')}")
             
             logger.info(f"Working script pattern push completed successfully")
+            
+            # CRITICAL: Add the new signal to worksheet display items (missing step!)
+            logger.info("=== ADDING SIGNAL TO WORKSHEET DISPLAY ITEMS ===")
+            try:
+                # Get the new signal ID from push result
+                if len(result) >= 2:
+                    new_signal_result = result.iloc[-1]  # Last row should be our new signal
+                    new_signal_id = new_signal_result.get('ID')
+                    new_signal_name_from_result = new_signal_result.get('Name')
+                    
+                    if new_signal_id:
+                        logger.info(f"Adding signal {new_signal_name_from_result} (ID: {new_signal_id}) to worksheet display items")
+                        
+                        # Pull the current worksheet
+                        logger.info(f"Pulling worksheet {worksheet_id} from workbook {workbook_id}")
+                        worksheet = spy.workbooks.pull(workbook_id=workbook_id, worksheet=worksheet_id)
+                        logger.info(f"Pulled worksheet: {type(worksheet)}")
+                        
+                        # Add the new signal to the worksheet's display items
+                        new_display_item = pd.DataFrame([{'ID': new_signal_id}])
+                        logger.info(f"Created new display item: {new_display_item.to_dict('records')}")
+                        
+                        if hasattr(worksheet, 'display_items'):
+                            logger.info(f"Current display items: {len(worksheet.display_items) if worksheet.display_items is not None else 0}")
+                            if worksheet.display_items is not None and not worksheet.display_items.empty:
+                                worksheet.display_items = pd.concat([worksheet.display_items, new_display_item], ignore_index=True)
+                            else:
+                                worksheet.display_items = new_display_item
+                            logger.info(f"Updated display items: {len(worksheet.display_items)}")
+                        else:
+                            logger.warning("Worksheet object doesn't have display_items attribute")
+                            # Try alternative approach
+                            worksheet.display_items = new_display_item
+                        
+                        # Push the updated worksheet back to Seeq
+                        logger.info("Pushing updated worksheet back to Seeq...")
+                        worksheet_push_result = spy.workbooks.push(worksheet)
+                        logger.info(f"Worksheet push result: {worksheet_push_result}")
+                        
+                        logger.info("✅ Successfully added signal to worksheet display items")
+                        
+                    else:
+                        logger.warning("Could not get new signal ID from push result")
+                        
+                else:
+                    logger.warning("Push result doesn't contain expected signal data")
+                    
+            except Exception as display_error:
+                logger.error(f"Failed to add signal to worksheet display items: {display_error}")
+                logger.error(f"Display error details: {traceback.format_exc()}")
+                # Don't fail the entire operation - signal was still created successfully
+                logger.info("Signal was created successfully, but may not appear in worksheet display")
             
             # Success - continue to response
             
