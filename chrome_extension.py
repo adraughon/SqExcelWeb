@@ -57,12 +57,18 @@ def add_cors_headers(response):
     logger.info(f"CORS: Set headers - Origin: {response.headers.get('Access-Control-Allow-Origin')}")
     return response
 
+@chrome_bp.after_request
+def after_request(response):
+    """Add CORS headers to all responses"""
+    logger.info(f"CORS: Adding headers to response for {request.method} {request.path}")
+    return add_cors_headers(response)
+
 @chrome_bp.before_request
 def handle_preflight():
     """Handle preflight OPTIONS requests"""
     if request.method == "OPTIONS":
-        logger.info(f"CORS: Handling preflight OPTIONS request from {request.headers.get('Origin')}")
-        response = make_response()
+        logger.info(f"CORS: Handling preflight OPTIONS request from {request.headers.get('Origin')} to {request.path}")
+        response = make_response('', 200)
         response = add_cors_headers(response)
         logger.info(f"CORS: Preflight response headers: {dict(response.headers)}")
         return response
@@ -454,13 +460,11 @@ def search_with_session():
         worksheet_id = data.get('worksheetId')
         
         if not all([seeq_url, sensor_names]):
-            response = jsonify({
+            return jsonify({
                 "success": False,
                 "message": "Missing required parameters",
                 "error": "Missing seeqUrl or sensorNames"
-            })
-            response = add_cors_headers(response)
-            return response, 400
+            }), 400
         
         # Extract auth token from cookies
         auth_token = None
@@ -496,7 +500,7 @@ def search_with_session():
             # We'll try to authenticate with just the CSRF token and see if SPy can handle it
         
         if not csrf_token:
-            response = jsonify({
+            return jsonify({
                 "success": False,
                 "message": "Missing CSRF token",
                 "error": "CSRF token is required for Seeq authentication",
@@ -505,30 +509,23 @@ def search_with_session():
                     "auth_token_present": bool(auth_token),
                     "cookie_count": len(seeq_cookies.split(';')) if seeq_cookies else 0
                 }
-            })
-            response = add_cors_headers(response)
-            return response, 401
+            }), 401
         
         # Use session-based authentication with SPy
         result = authenticate_and_search_with_session(seeq_url, auth_token, csrf_token, sensor_names, workbook_id, worksheet_id)
         
         if result['success']:
-            response = jsonify(result)
-            return add_cors_headers(response)
+            return jsonify(result)
         else:
-            response = jsonify(result)
-            response = add_cors_headers(response)
-            return response, 500
+            return jsonify(result), 500
             
     except Exception as e:
         logger.error(f"Session search error: {str(e)}")
-        response = jsonify({
+        return jsonify({
             "success": False,
             "message": f"Session search error: {str(e)}",
             "error": "Internal server error"
-        })
-        response = add_cors_headers(response)
-        return response, 500
+        }), 500
 
 @chrome_bp.route('/add-signal-to-worksheet', methods=['POST'])
 def add_signal_to_worksheet_endpoint():
@@ -545,13 +542,11 @@ def add_signal_to_worksheet_endpoint():
         formula_params = data.get('formulaParams')  # Optional custom formula parameters
         
         if not all([seeq_url, sensor_name, workbook_id, worksheet_id]):
-            response = jsonify({
+            return jsonify({
                 "success": False,
                 "message": "Missing required parameters",
                 "error": "Missing seeqUrl, sensorName, workbookId, or worksheetId"
-            })
-            response = add_cors_headers(response)
-            return response, 400
+            }), 400
         
         # Extract auth token from cookies
         auth_token = None
@@ -585,13 +580,11 @@ def add_signal_to_worksheet_endpoint():
             logger.warning("No auth token found, attempting authentication with CSRF token only")
         
         if not csrf_token:
-            response = jsonify({
+            return jsonify({
                 "success": False,
                 "message": "Missing CSRF token",
                 "error": "CSRF token is required for Seeq authentication"
-            })
-            response = add_cors_headers(response)
-            return response, 401
+            }), 401
         
         # Add signal to worksheet using session authentication
         result = add_signal_to_worksheet(
@@ -600,19 +593,14 @@ def add_signal_to_worksheet_endpoint():
         )
         
         if result['success']:
-            response = jsonify(result)
-            return add_cors_headers(response)
+            return jsonify(result)
         else:
-            response = jsonify(result)
-            response = add_cors_headers(response)
-            return response, 500
+            return jsonify(result), 500
             
     except Exception as e:
         logger.error(f"Add signal error: {str(e)}")
-        response = jsonify({
+        return jsonify({
             "success": False,
             "message": f"Add signal error: {str(e)}",
             "error": "Internal server error"
-        })
-        response = add_cors_headers(response)
-        return response, 500
+        }), 500
