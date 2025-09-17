@@ -466,16 +466,39 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             logger.info(f"Target worksheet: {worksheet_id}")
             
             # Push to workbook using proper round-tripping pattern
-            # Try different workbook parameter formats based on API docs
-            logger.info("Trying workbook push with ID format...")
+            # CRITICAL INSIGHT: Maybe we need to push ONLY the new signal, not combined metadata
+            logger.info("Trying to push ONLY the new signal to worksheet...")
             
-            result = spy.push(
-                metadata=combined_metadata,
+            # EXPERIMENT: Try different push approaches to get signal in worksheet
+            logger.info("=== EXPERIMENT 1: Push new signal only with worksheet ===")
+            result1 = spy.push(
+                metadata=new_signal_metadata,  # Just the new signal
                 workbook=workbook_id, 
                 worksheet=worksheet_id,
                 errors='catalog',
                 quiet=True
             )
+            logger.info(f"Experiment 1 result: {result1['Push Result'].tolist() if 'Push Result' in result1.columns else 'No Push Result column'}")
+            
+            logger.info("=== EXPERIMENT 2: Push new signal only without worksheet ===")
+            result2 = spy.push(
+                metadata=new_signal_metadata,  # Just the new signal
+                workbook=workbook_id, 
+                # worksheet=worksheet_id,  # Try without worksheet
+                errors='catalog',
+                quiet=True
+            )
+            logger.info(f"Experiment 2 result: {result2['Push Result'].tolist() if 'Push Result' in result2.columns else 'No Push Result column'}")
+            
+            logger.info("=== EXPERIMENT 3: Push combined metadata (original approach) ===")
+            result = spy.push(
+                metadata=combined_metadata,  # Combined like working example
+                workbook=workbook_id, 
+                worksheet=worksheet_id,
+                errors='catalog',
+                quiet=True
+            )
+            logger.info(f"Experiment 3 result: {result['Push Result'].tolist() if 'Push Result' in result.columns else 'No Push Result column'}")
             
             # Check if the result indicates any issues
             if 'Push Result' in result.columns:
