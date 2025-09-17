@@ -284,7 +284,7 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                     "error": "Worksheet not found"
                 }
             
-            worksheet_name = current_signals['Name'].iloc[0] if 'Name' in current_signals.columns else f"Worksheet {worksheet_id}"
+            worksheet_name = current_signals['Name'].iloc[0] if 'Name' in current_signals.columns and len(current_signals) > 0 else f"Worksheet {worksheet_id}"
             logger.info(f"Found worksheet: {worksheet_name}")
             
         except Exception as e:
@@ -341,10 +341,12 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "error": "Metadata retrieval failed"
             }
         
+        # Construct the worksheet URL that SPy expects (always define this)
+        worksheet_url = f"{url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
+        logger.info(f"Worksheet URL: {worksheet_url}")
+        
         # Get all current items in the worksheet using the worksheet URL (like the working example)
         try:
-            # Construct the worksheet URL that SPy expects
-            worksheet_url = f"{url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
             logger.info(f"Getting current worksheet items using URL: {worksheet_url}")
             
             # Get worksheet contents using spy.search with the URL (like the working example)
@@ -457,22 +459,8 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             logger.info(f"SPy push completed successfully")
             
-            # Let's verify the signal was actually added by checking the worksheet again
-            try:
-                verification_signals = spy.search(worksheet_url, quiet=True)
-                logger.info(f"Verification: Found {len(verification_signals)} signals after push")
-                signal_names = verification_signals['Name'].tolist() if 'Name' in verification_signals.columns else []
-                logger.info(f"Signal names in worksheet: {signal_names}")
-                
-                if sensor_name in signal_names:
-                    logger.info(f"✅ Verified: {sensor_name} is now in the worksheet")
-                else:
-                    logger.warning(f"❌ Warning: {sensor_name} not found in worksheet after push")
-                    
-            except Exception as e:
-                logger.warning(f"Could not verify signal addition: {e}")
-            
-            return {
+            # Prepare success response FIRST (before verification that might fail)
+            success_response = {
                 "success": True,
                 "message": f"Successfully added StoredSignal '{sensor_name}' to worksheet '{worksheet_name}'",
                 "signal_name": sensor_name,
@@ -483,6 +471,38 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "worksheet_name": worksheet_name,
                 "user": str(spy.user)
             }
+            
+            # Let's verify the signal was actually added by checking the worksheet again
+            # NOTE: This is just for verification - if it fails, we still return success since push worked
+            try:
+                if worksheet_url:
+                    verification_signals = spy.search(worksheet_url, quiet=True)
+                    logger.info(f"Verification: Found {len(verification_signals)} signals after push")
+                    if verification_signals is not None and not verification_signals.empty:
+                        signal_names = verification_signals['Name'].tolist() if 'Name' in verification_signals.columns else []
+                        logger.info(f"Signal names in worksheet: {signal_names}")
+                        
+                        # Check for both the original sensor name and the new signal name
+                        new_signal_name = f"{sensor_name} Copy"
+                        if sensor_name in signal_names or new_signal_name in signal_names:
+                            logger.info(f"✅ Verified: Signal related to {sensor_name} is now in the worksheet")
+                            success_response["verification"] = "success"
+                        else:
+                            logger.warning(f"❌ Warning: Neither {sensor_name} nor {new_signal_name} found in worksheet after push")
+                            success_response["verification"] = "not_found_in_verification"
+                    else:
+                        logger.warning("❌ Verification failed: No signals returned from worksheet search")
+                        success_response["verification"] = "no_signals_returned"
+                else:
+                    logger.warning("❌ Cannot verify: worksheet_url is None")
+                    success_response["verification"] = "worksheet_url_none"
+                    
+            except Exception as e:
+                logger.warning(f"Could not verify signal addition: {e}")
+                logger.warning(f"Verification error details: {traceback.format_exc()}")
+                success_response["verification"] = f"verification_error: {str(e)}"
+            
+            return success_response
             
         except Exception as e:
             return {
