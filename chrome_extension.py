@@ -363,28 +363,61 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # Combine current signals with the signal to add
-        metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
-        metadata = metadata.drop_duplicates(subset=['ID'])
-        
-        logger.info(f"Final metadata shape: {metadata.shape}")
-        logger.info(f"Final metadata columns: {list(metadata.columns)}")
+        # Try a different approach: just push the new signal directly
+        # This mimics what Seeq Workbench does when you drag a signal to a worksheet
         logger.info(f"Signal to add: {signal_to_add.to_dict('records')}")
         
-        # For StoredSignals, we only need Name, Type, and ID
-        # Push the signal to the worksheet
         try:
-            logger.info(f"Pushing StoredSignal to workbook {workbook_id}, worksheet {worksheet_id}")
+            logger.info(f"Pushing new StoredSignal directly to workbook {workbook_id}, worksheet {worksheet_id}")
             
+            # First, try pushing just the new signal
             result = spy.push(
-                metadata=metadata, 
+                metadata=signal_to_add, 
                 workbook=workbook_id, 
                 worksheet=worksheet_id,
                 errors='catalog',
-                quiet=True
+                quiet=False  # Let's see any errors
             )
             
+            logger.info(f"SPy push result: {result}")
+            
+            # If that doesn't work, try the combined approach
+            if result is None or (hasattr(result, 'empty') and result.empty):
+                logger.info("Direct push didn't work, trying combined metadata approach")
+                
+                # Combine current signals with the signal to add
+                metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
+                metadata = metadata.drop_duplicates(subset=['ID'])
+                
+                logger.info(f"Combined metadata shape: {metadata.shape}")
+                logger.info(f"Combined metadata columns: {list(metadata.columns)}")
+                
+                result = spy.push(
+                    metadata=metadata, 
+                    workbook=workbook_id, 
+                    worksheet=worksheet_id,
+                    errors='catalog',
+                    quiet=False
+                )
+                
+                logger.info(f"Combined push result: {result}")
+            
             logger.info(f"SPy push completed successfully")
+            
+            # Let's verify the signal was actually added by checking the worksheet again
+            try:
+                verification_signals = spy.search(worksheet_url, quiet=True)
+                logger.info(f"Verification: Found {len(verification_signals)} signals after push")
+                signal_names = verification_signals['Name'].tolist() if 'Name' in verification_signals.columns else []
+                logger.info(f"Signal names in worksheet: {signal_names}")
+                
+                if sensor_name in signal_names:
+                    logger.info(f"✅ Verified: {sensor_name} is now in the worksheet")
+                else:
+                    logger.warning(f"❌ Warning: {sensor_name} not found in worksheet after push")
+                    
+            except Exception as e:
+                logger.warning(f"Could not verify signal addition: {e}")
             
             return {
                 "success": True,
