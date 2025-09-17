@@ -512,30 +512,61 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                     if new_signal_id:
                         logger.info(f"Adding signal {new_signal_name_from_result} (ID: {new_signal_id}) to worksheet display items")
                         
-                        # Pull the current worksheet
-                        logger.info(f"Pulling worksheet {worksheet_id} from workbook {workbook_id}")
-                        worksheet = spy.workbooks.pull(workbook_id=workbook_id, worksheet=worksheet_id)
-                        logger.info(f"Pulled worksheet: {type(worksheet)}")
+                        # Pull the workbook and access the worksheet (new API)
+                        logger.info(f"Pulling workbook {workbook_id}")
+                        workbook = spy.workbooks.pull(workbook_id)
+                        logger.info(f"Pulled workbook: {type(workbook)}")
                         
-                        # Add the new signal to the worksheet's display items
-                        new_display_item = pd.DataFrame([{'ID': new_signal_id}])
+                        # Find the worksheet in the workbook
+                        logger.info(f"Looking for worksheet {worksheet_id} in workbook")
+                        worksheet = None
+                        if hasattr(workbook, 'worksheets'):
+                            logger.info(f"Available worksheets: {list(workbook.worksheets.keys()) if workbook.worksheets else 'None'}")
+                            # Try to find worksheet by ID or name
+                            for ws_name, ws_obj in workbook.worksheets.items():
+                                if hasattr(ws_obj, 'id') and ws_obj.id == worksheet_id:
+                                    worksheet = ws_obj
+                                    logger.info(f"Found worksheet by ID: {ws_name}")
+                                    break
+                            
+                            # If not found by ID, try first worksheet as fallback
+                            if worksheet is None and workbook.worksheets:
+                                worksheet = list(workbook.worksheets.values())[0]
+                                logger.info(f"Using first available worksheet as fallback: {list(workbook.worksheets.keys())[0]}")
+                        
+                        if worksheet is None:
+                            logger.error("Could not find worksheet in workbook")
+                            raise Exception(f"Worksheet {worksheet_id} not found in workbook {workbook_id}")
+                        
+                        logger.info(f"Using worksheet: {type(worksheet)}")
+                        
+                        # STEP 1: Pull current workstep to sync with UI (following docs exactly)
+                        logger.info("Pulling current workstep to sync with UI...")
+                        worksheet.pull_current_workstep(quiet=True)
+                        logger.info("Current workstep pulled successfully")
+                        
+                        # STEP 2: Add the new signal to the worksheet's display items (following docs pattern)
+                        new_display_item = pd.DataFrame([{
+                            'ID': new_signal_id,
+                            'Type': 'Signal'  # Add Type as required by API
+                        }])
                         logger.info(f"Created new display item: {new_display_item.to_dict('records')}")
                         
-                        if hasattr(worksheet, 'display_items'):
-                            logger.info(f"Current display items: {len(worksheet.display_items) if worksheet.display_items is not None else 0}")
-                            if worksheet.display_items is not None and not worksheet.display_items.empty:
-                                worksheet.display_items = pd.concat([worksheet.display_items, new_display_item], ignore_index=True)
-                            else:
-                                worksheet.display_items = new_display_item
-                            logger.info(f"Updated display items: {len(worksheet.display_items)}")
+                        # Get current display items
+                        current_display_items = worksheet.display_items
+                        logger.info(f"Current display items: {len(current_display_items) if current_display_items is not None and not current_display_items.empty else 0}")
+                        
+                        # Add new signal to display items (following docs pattern)
+                        if current_display_items is not None and not current_display_items.empty:
+                            worksheet.display_items = pd.concat([current_display_items, new_display_item], ignore_index=True)
                         else:
-                            logger.warning("Worksheet object doesn't have display_items attribute")
-                            # Try alternative approach
                             worksheet.display_items = new_display_item
                         
-                        # Push the updated worksheet back to Seeq
-                        logger.info("Pushing updated worksheet back to Seeq...")
-                        worksheet_push_result = spy.workbooks.push(worksheet)
+                        logger.info(f"Updated display items: {len(worksheet.display_items)}")
+                        
+                        # STEP 3: Push the workstep back to Seeq (following docs exactly)
+                        logger.info("Pushing current workstep back to Seeq...")
+                        worksheet_push_result = worksheet.push_current_workstep(quiet=True)
                         logger.info(f"Worksheet push result: {worksheet_push_result}")
                         
                         logger.info("✅ Successfully added signal to worksheet display items")
