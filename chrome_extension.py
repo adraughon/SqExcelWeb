@@ -337,31 +337,49 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             'Formula Parameters': formula_params
         }])
         
-        # Get all current items in the worksheet
+        # Get all current items in the worksheet using the worksheet URL (like the working example)
         try:
-            worksheet_items = spy.search({'ID': worksheet_id}, quiet=True)
-            if not worksheet_items.empty:
-                # Combine with existing items
-                all_items = pd.concat([worksheet_items, new_signal]).reset_index(drop=True)
-                # Remove duplicates based on ID (keep existing items)
-                all_items = all_items.drop_duplicates(subset=['ID'], keep='first')
+            # Construct the worksheet URL that SPy expects
+            worksheet_url = f"{url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
+            logger.info(f"Getting current worksheet items using URL: {worksheet_url}")
+            
+            # Get worksheet contents using spy.search with the URL (like the working example)
+            current_signals = spy.search(worksheet_url, quiet=True)
+            logger.info(f"Found {len(current_signals)} existing worksheet items")
+            
+            if not current_signals.empty:
+                logger.info(f"Existing items columns: {list(current_signals.columns)}")
+                logger.info(f"Existing items sample: {current_signals.head(2).to_dict('records') if len(current_signals) > 0 else 'No items'}")
             else:
-                all_items = new_signal
+                logger.info("No existing worksheet items found")
                 
         except Exception as e:
             logger.warning(f"Could not get existing worksheet items: {e}")
-            all_items = new_signal
+            logger.warning(f"Error details: {traceback.format_exc()}")
+            # Create empty DataFrame with expected columns if search fails
+            current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # Push the new signal to the worksheet
+        # Combine current signals with new signal (exactly like the working example)
+        metadata = pd.concat([current_signals, new_signal]).reset_index(drop=True)
+        metadata = metadata.drop_duplicates(subset=['ID'])
+        
+        logger.info(f"Final metadata shape: {metadata.shape}")
+        logger.info(f"Final metadata columns: {list(metadata.columns)}")
+        logger.info(f"New signal in metadata: {new_signal.to_dict('records')}")
+        
+        # Push the new signal to the worksheet (exactly like the working example)
         try:
             logger.info(f"Pushing signal to workbook {workbook_id}, worksheet {worksheet_id}")
+            
             result = spy.push(
-                metadata=all_items[['Name', 'Type', 'ID', 'Formula', 'Formula Parameters']],
-                workbook=workbook_id,
+                metadata=metadata[['Name', 'Type', 'ID', 'Formula', 'Formula Parameters']], 
+                workbook=workbook_id, 
                 worksheet=worksheet_id,
                 errors='catalog',
                 quiet=True
             )
+            
+            logger.info(f"SPy push completed successfully")
             
             return {
                 "success": True,
@@ -487,8 +505,7 @@ def add_signal_to_worksheet_endpoint():
         worksheet_id = data.get('worksheetId')
         seeq_cookies = data.get('seeqCookies', '')
         csrf_token = data.get('csrfToken', '')
-        auth_token_explicit = data.get('authToken', '')  # Explicitly sent auth token from Chrome API
-        formula = data.get('formula')  # Optional custom formula
+        auth_token_explicit = data.get('authToken', '')  # Explicitly sent auth token from Chrome API        formula = data.get('formula')  # Optional custom formula
         formula_params = data.get('formulaParams')  # Optional custom formula parameters
         
         # Debug: Log received authentication data
