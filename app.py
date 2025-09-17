@@ -10,6 +10,9 @@ from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+# Import Chrome extension functionality
+from chrome_extension import chrome_bp
+
 # Configure logging for production
 logging.basicConfig(
     level=logging.INFO,
@@ -20,6 +23,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = secrets.token_hex(32)
+
+# Register Chrome extension Blueprint
+app.register_blueprint(chrome_bp)
 
 # Security: Restrict CORS to specific trusted origins
 CORS(app, origins=[
@@ -130,6 +136,7 @@ auth_state = {
 # Global credential storage for Excel functions
 # Note: In production, consider using Redis or a database for better scalability
 temp_credentials = None
+
 
 def authenticate_seeq(url: str, access_key: str, password: str, 
                      auth_provider: str = 'Seeq', 
@@ -680,6 +687,8 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
             "traceback": error_trace
         }
 
+
+
 # Hello World endpoints for testing
 @app.route('/')
 def hello_world():
@@ -914,6 +923,7 @@ def seeq_data():
             "message": f"Proxy error: {str(e)}",
             "error": "Internal server error"
         }), 500
+
 
 # Excel function compatibility endpoints
 @app.route('/api/seeq/credentials', methods=['GET'])
