@@ -74,8 +74,12 @@ def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str,
         try:
             with redirect_stdout(io.StringIO()):
                 # Attempt to login using session tokens
+                logger.info(f"Attempting SPy login with URL: {url}")
+                logger.info(f"Auth token present: {bool(auth_token)}, CSRF token present: {bool(csrf_token)}")
+                
                 if auth_token and auth_token != csrf_token:
                     # We have a distinct auth token
+                    logger.info("Trying SPy login with distinct auth and CSRF tokens")
                     spy.login(
                         url=url,
                         auth_token=auth_token,
@@ -85,6 +89,7 @@ def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str,
                 else:
                     # Try with just CSRF token or no explicit auth token
                     # Some Seeq setups might work with just CSRF token
+                    logger.info("Trying SPy login with CSRF token only")
                     try:
                         spy.login(
                             url=url,
@@ -92,7 +97,9 @@ def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str,
                             ignore_ssl_errors=ignore_ssl_errors
                         )
                     except Exception as csrf_only_error:
+                        logger.info(f"CSRF-only login failed: {csrf_only_error}")
                         # If that fails, try with the CSRF token as auth token
+                        logger.info("Trying SPy login with CSRF token as auth token")
                         spy.login(
                             url=url,
                             auth_token=csrf_token,
@@ -483,6 +490,12 @@ def add_signal_to_worksheet_endpoint():
         formula = data.get('formula')  # Optional custom formula
         formula_params = data.get('formulaParams')  # Optional custom formula parameters
         
+        # Debug: Log received authentication data
+        logger.info(f"Chrome extension request - URL: {seeq_url}, Sensor: {sensor_name}")
+        logger.info(f"Chrome extension request - Workbook: {workbook_id}, Worksheet: {worksheet_id}")
+        logger.info(f"Chrome extension request - Cookies length: {len(seeq_cookies)}, CSRF token: {csrf_token[:10]}..." if csrf_token else "No CSRF token")
+        logger.info(f"Chrome extension request - Cookie preview: {seeq_cookies[:200]}..." if seeq_cookies else "No cookies")
+        
         if not all([seeq_url, sensor_name, workbook_id, worksheet_id]):
             return jsonify({
                 "success": False,
@@ -506,16 +519,21 @@ def add_signal_to_worksheet_endpoint():
                 r'seeqAuth=([^;]+)'
             ]
             
+            logger.info(f"Searching for auth tokens in cookies: {seeq_cookies[:500]}...")
             for pattern in auth_patterns:
                 auth_match = re.search(pattern, seeq_cookies)
                 if auth_match:
                     auth_token = auth_match.group(1)
+                    logger.info(f"Found auth token with pattern {pattern}: {auth_token[:10]}...")
                     break
+            
+            if not auth_token:
+                logger.warning(f"No auth token found in cookies using patterns: {auth_patterns}")
         
         # If no auth token found, try using CSRF token as fallback
         if not auth_token and csrf_token:
             auth_token = csrf_token
-            logger.info("Using CSRF token as auth token fallback")
+            logger.info(f"Using CSRF token as auth token fallback: {csrf_token[:10]}...")
         
         # For Seeq, we might need to try authentication without explicit auth token
         if not auth_token:

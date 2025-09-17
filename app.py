@@ -32,7 +32,6 @@ BlueprintCORS(chrome_bp, origins=[
     'https://*.microsoft.com',
     'https://*.office365.com',
     'https://*.seeq.tech',
-    'https://talosenergy.seeq.tech'
 ])
 
 # Register Chrome extension Blueprint
@@ -45,12 +44,10 @@ CORS(app, origins=[
     'https://*.microsoft.com',
     'https://*.office365.com',
     'https://*.seeq.tech',
-    'https://talosenergy.seeq.tech'
 ])
 
 # Security: Define trusted domains for SSL bypass (if needed)
 TRUSTED_DOMAINS = [
-    'talosenergy.seeq.tech',
     '*.seeq.tech',
     'localhost',
     '127.0.0.1'
