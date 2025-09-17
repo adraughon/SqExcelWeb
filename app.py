@@ -24,9 +24,6 @@ app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = secrets.token_hex(32)
 
-# Register Chrome extension Blueprint
-app.register_blueprint(chrome_bp)
-
 # Security: Restrict CORS to specific trusted origins
 CORS(app, origins=[
     'https://adraughon.github.io',
@@ -36,7 +33,7 @@ CORS(app, origins=[
     'https://*.seeq.tech',
 ])
 
-# Apply CORS to the Chrome extension Blueprint as well
+# Apply CORS to the Chrome extension Blueprint before registering it
 CORS(chrome_bp, origins=[
     'https://adraughon.github.io',
     'https://*.office.com',
@@ -44,6 +41,9 @@ CORS(chrome_bp, origins=[
     'https://*.office365.com',
     'https://*.seeq.tech',
 ])
+
+# Register Chrome extension Blueprint
+app.register_blueprint(chrome_bp)
 
 # Security: Define trusted domains for SSL bypass (if needed)
 TRUSTED_DOMAINS = [
