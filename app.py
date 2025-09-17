@@ -34,7 +34,15 @@ CORS(app, origins=[
     'https://*.microsoft.com',
     'https://*.office365.com',
     'https://*.seeq.tech',
-    'https://talosenergy.seeq.tech'
+])
+
+# Apply CORS to the Chrome extension Blueprint as well
+CORS(chrome_bp, origins=[
+    'https://adraughon.github.io',
+    'https://*.office.com',
+    'https://*.microsoft.com',
+    'https://*.office365.com',
+    'https://*.seeq.tech',
 ])
 
 # Security: Define trusted domains for SSL bypass (if needed)
