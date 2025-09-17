@@ -52,8 +52,8 @@ def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str,
         
         # Set timeout options to prevent hanging
         try:
-            spy.options.request_timeout_in_seconds = 30
-            spy.options.retry_timeout_in_seconds = 10
+            spy.options.request_timeout_in_seconds = 15  # Reduced from 30
+            spy.options.retry_timeout_in_seconds = 5     # Reduced from 10
         except AttributeError:
             pass
         
@@ -296,6 +296,7 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
         
         # Search for the sensor to get its ID
         try:
+            logger.info(f"Searching for sensor: {sensor_name}")
             sensor_search = spy.search({
                 'Name': sensor_name,
                 'Type': 'StoredSignal'
@@ -312,6 +313,8 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             logger.info(f"Found sensor: {sensor_name} with ID: {sensor_id}")
             
         except Exception as e:
+            logger.error(f"Sensor search failed: {str(e)}")
+            logger.error(f"Sensor search error details: {traceback.format_exc()}")
             return {
                 "success": False,
                 "message": f"Failed to find sensor '{sensor_name}': {str(e)}",
@@ -344,6 +347,28 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
         # Construct the worksheet URL that SPy expects (always define this)
         worksheet_url = f"{url}/workbook/{workbook_id}/worksheet/{worksheet_id}"
         logger.info(f"Worksheet URL: {worksheet_url}")
+        
+        # CRITICAL: Try to use SPy utility functions to get proper IDs like the working example
+        try:
+            logger.info("Trying to extract workbook/worksheet IDs using SPy utilities...")
+            spy_workbook_id = spy.utils.get_workbook_id_from_url(worksheet_url)
+            spy_worksheet_id = spy.utils.get_worksheet_id_from_url(worksheet_url)
+            logger.info(f"SPy utility extracted - Workbook ID: {spy_workbook_id}, Worksheet ID: {spy_worksheet_id}")
+            
+            # Use SPy-extracted IDs if they're different
+            if spy_workbook_id and spy_worksheet_id:
+                if spy_workbook_id != workbook_id or spy_worksheet_id != worksheet_id:
+                    logger.info(f"Using SPy-extracted IDs instead of Chrome-parsed IDs")
+                    workbook_id = spy_workbook_id
+                    worksheet_id = spy_worksheet_id
+                else:
+                    logger.info("SPy-extracted IDs match Chrome-parsed IDs")
+            else:
+                logger.info("SPy utilities returned empty IDs, keeping Chrome-parsed IDs")
+                
+        except Exception as spy_utils_error:
+            logger.warning(f"SPy utilities failed: {spy_utils_error}")
+            logger.info("Continuing with Chrome-parsed IDs")
         
         # Get all current items in the worksheet using the worksheet URL (like the working example)
         try:
@@ -402,6 +427,10 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             # Use the exact push parameters from working example
             logger.info("Pushing with exact working example parameters...")
+            logger.info(f"Push parameters - workbook: {workbook_id}, worksheet: {worksheet_id}")
+            logger.info(f"Push metadata columns: {['Name','Type','ID','Formula','Formula Parameters']}")
+            logger.info(f"Push metadata shape: {metadata[['Name','Type','ID','Formula','Formula Parameters']].shape}")
+            
             result = spy.push(
                 metadata=metadata[['Name','Type','ID','Formula','Formula Parameters']], 
                 workbook=workbook_id, 
@@ -477,45 +506,72 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             "user": str(spy.user) if spy.user is not None else "Unknown"
         }
         
-        # Let's verify the signal was actually added by checking the worksheet again
+        # Let's verify the signal was actually added by checking multiple ways
         # NOTE: This is just for verification - if it fails, we still return success since push worked
-        logger.info("Starting verification process...")
+        logger.info("Starting comprehensive verification process...")
         try:
+            # Method 1: Check worksheet URL
             if worksheet_url:
-                logger.info(f"Searching worksheet at URL: {worksheet_url}")
+                logger.info(f"Verification Method 1: Searching worksheet at URL: {worksheet_url}")
                 verification_signals = spy.search(worksheet_url, quiet=True)
-                logger.info(f"Verification search completed. Type: {type(verification_signals)}")
+                logger.info(f"Worksheet verification completed. Found {len(verification_signals)} items")
                 
-                if verification_signals is not None:
-                    logger.info(f"Verification: Found {len(verification_signals)} signals after push")
-                    if not verification_signals.empty and 'Name' in verification_signals.columns:
-                        try:
-                            signal_names = verification_signals['Name'].tolist()
-                            logger.info(f"Signal names in worksheet: {signal_names}")
-                            
-                            # Check for both the original sensor name and the new signal name
-                            new_signal_name = f"{sensor_name} Copy"
-                            if sensor_name in signal_names or new_signal_name in signal_names:
-                                logger.info(f"✅ Verified: Signal related to {sensor_name} is now in the worksheet")
-                                success_response["verification"] = "success"
-                            else:
-                                logger.warning(f"❌ Warning: Neither {sensor_name} nor {new_signal_name} found in worksheet after push")
-                                success_response["verification"] = "not_found_in_verification"
-                        except Exception as name_error:
-                            logger.warning(f"Error processing signal names: {name_error}")
-                            success_response["verification"] = f"name_processing_error: {str(name_error)}"
+                if not verification_signals.empty and 'Name' in verification_signals.columns:
+                    signal_names = verification_signals['Name'].tolist()
+                    logger.info(f"Signal names in worksheet: {signal_names}")
+                    
+                    # Check for both the original sensor name and the new signal name
+                    new_signal_name = f"{sensor_name} Copy"
+                    if sensor_name in signal_names or new_signal_name in signal_names:
+                        logger.info(f"✅ Method 1 Verified: Signal found in worksheet")
+                        success_response["verification"] = "worksheet_success"
                     else:
-                        logger.warning("❌ Verification failed: No signals or no Name column")
-                        success_response["verification"] = "no_signals_or_no_name_column"
+                        logger.warning(f"❌ Method 1: Neither {sensor_name} nor {new_signal_name} found in worksheet")
+                        success_response["verification"] = "not_found_in_worksheet"
                 else:
-                    logger.warning("❌ Verification failed: verification_signals is None")
-                    success_response["verification"] = "verification_signals_none"
-            else:
-                logger.warning("❌ Cannot verify: worksheet_url is None")
-                success_response["verification"] = "worksheet_url_none"
+                    logger.warning("❌ Method 1: No signals found in worksheet")
+                    success_response["verification"] = "no_worksheet_signals"
+            
+            # Method 2: Check workbook level
+            logger.info(f"Verification Method 2: Searching entire workbook")
+            try:
+                workbook_url = f"{url}/workbook/{workbook_id}"
+                workbook_signals = spy.search(workbook_url, quiet=True)
+                logger.info(f"Workbook verification completed. Found {len(workbook_signals)} items")
+                
+                if not workbook_signals.empty and 'Name' in workbook_signals.columns:
+                    workbook_signal_names = workbook_signals['Name'].tolist()
+                    logger.info(f"All signal names in workbook: {workbook_signal_names}")
+                    
+                    new_signal_name = f"{sensor_name} Copy"
+                    if sensor_name in workbook_signal_names or new_signal_name in workbook_signal_names:
+                        logger.info(f"✅ Method 2 Verified: Signal found in workbook")
+                        success_response["verification"] = "workbook_success"
+                    else:
+                        logger.warning(f"❌ Method 2: Signal not found in workbook either")
+                        
+            except Exception as workbook_error:
+                logger.warning(f"Method 2 workbook search failed: {workbook_error}")
+            
+            # Method 3: Search by signal name globally
+            logger.info(f"Verification Method 3: Global search for new signal")
+            try:
+                new_signal_name = f"{sensor_name} Copy"
+                global_search = spy.search({'Name': new_signal_name}, quiet=True)
+                logger.info(f"Global search completed. Found {len(global_search)} items with name '{new_signal_name}'")
+                
+                if not global_search.empty:
+                    logger.info(f"✅ Method 3 Verified: Signal found globally")
+                    logger.info(f"Global search result: {global_search[['Name', 'Type', 'ID']].to_dict('records')}")
+                    success_response["verification"] = "global_success"
+                else:
+                    logger.warning(f"❌ Method 3: Signal not found in global search")
+                    
+            except Exception as global_error:
+                logger.warning(f"Method 3 global search failed: {global_error}")
                 
         except Exception as e:
-            logger.warning(f"Could not verify signal addition: {e}")
+            logger.warning(f"Verification process failed: {e}")
             logger.warning(f"Verification error details: {traceback.format_exc()}")
             success_response["verification"] = f"verification_error: {str(e)}"
         
