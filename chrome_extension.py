@@ -523,13 +523,6 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
         
         return success_response
             
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Failed to push signal to worksheet: {str(e)}",
-                "error": "Push operation failed"
-            }
-            
     except Exception as e:
         error_msg = str(e)
         error_trace = traceback.format_exc()
