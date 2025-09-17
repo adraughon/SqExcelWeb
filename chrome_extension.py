@@ -370,12 +370,12 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             logger.warning(f"SPy utilities failed: {spy_utils_error}")
             logger.info("Continuing with Chrome-parsed IDs")
         
-        # Get all current items in the worksheet using the worksheet URL (like the working example)
+        # Get all current items in the worksheet using ROUND-TRIPPING pattern from SPy docs
         try:
             logger.info(f"Getting current worksheet items using URL: {worksheet_url}")
             
-            # Get worksheet contents using spy.search with the URL (like the working example)
-            current_signals = spy.search(worksheet_url, quiet=True)
+            # CRITICAL: Use all_properties=True for round-tripping pattern (from SPy docs)
+            current_signals = spy.search(worksheet_url, all_properties=True, quiet=True)
             logger.info(f"Found {len(current_signals)} existing worksheet items")
             
             if not current_signals.empty:
@@ -390,58 +390,79 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # CRITICAL DIFFERENCE: The working script creates a NEW signal with a formula, not just adding the existing signal
-        # Let's try the exact pattern from the working example
+        # EXACT ROUND-TRIPPING PATTERN from SPy docs and working script
         logger.info(f"Original signal to add: {signal_to_add.to_dict('records')}")
         
         try:
-            logger.info(f"Trying the EXACT pattern from the working example")
+            logger.info("=== ROUND-TRIPPING PATTERN: Following SPy docs exactly ===")
             
-            # Method 1: Try the exact working pattern - create a new signal with formula
-            logger.info("=== METHOD 1: Exact working script pattern ===")
-            
-            # Create a new signal exactly like the working example
-            new_signal_name = f"{sensor_name} Copy"  # Like the working example
-            formula = "$s"  # Exact same formula
-            formula_params = {
-                '$s': sensor_id  # Use the sensor ID we found
-            }
-            
-            # Create the new signal DataFrame exactly like working example
-            new_signal = pd.DataFrame([{
+            # Step 1: Create new calculated signal metadata (following SPy docs for calculated items)
+            new_signal_name = f"{sensor_name} Copy"
+            new_signal_metadata = pd.DataFrame([{
                 'Name': new_signal_name,
-                'Type': 'Signal',  # Note: 'Signal', not 'StoredSignal'
-                'Formula': formula,
-                'Formula Parameters': formula_params
+                'Type': 'Signal',  # Calculated signal type
+                'Formula': '$s',   # Simple formula referencing original signal
+                'Formula Parameters': {
+                    '$s': sensor_id  # Reference to original signal ID
+                }
             }])
             
-            logger.info(f"New signal created: {new_signal.to_dict('records')}")
+            logger.info(f"New calculated signal metadata: {new_signal_metadata.to_dict('records')}")
             
-            # Combine with current signals exactly like working example
-            metadata = pd.concat([current_signals, new_signal]).reset_index(drop=True)
-            metadata = metadata.drop_duplicates(subset=['ID'])  # This will keep the new signal since it has no ID yet
+            # Step 2: Combine with existing worksheet items (round-tripping pattern)
+            # Important: Keep ALL columns from all_properties=True search
+            if not current_signals.empty:
+                # Concatenate preserving all original columns
+                combined_metadata = pd.concat([current_signals, new_signal_metadata], 
+                                            ignore_index=True, sort=False)
+            else:
+                combined_metadata = new_signal_metadata
+                
+            # Remove duplicates by ID (new signal has no ID so it will be kept)
+            combined_metadata = combined_metadata.drop_duplicates(subset=['ID'], keep='first')
             
-            logger.info(f"Combined metadata shape: {metadata.shape}")
-            logger.info(f"Combined metadata columns: {list(metadata.columns)}")
-            logger.info(f"Combined metadata sample: {metadata.tail(2).to_dict('records')}")
+            logger.info(f"Combined metadata shape: {combined_metadata.shape}")
+            logger.info(f"Combined metadata columns: {list(combined_metadata.columns)}")
             
-            # Use the exact push parameters from working example
-            logger.info("Pushing with exact working example parameters...")
-            logger.info(f"Push parameters - workbook: {workbook_id}, worksheet: {worksheet_id}")
-            logger.info(f"Push metadata columns: {['Name','Type','ID','Formula','Formula Parameters']}")
-            logger.info(f"Push metadata shape: {metadata[['Name','Type','ID','Formula','Formula Parameters']].shape}")
+            # Step 3: Push using exact SPy docs pattern for calculated items
+            logger.info("Pushing calculated signal using SPy docs pattern...")
+            logger.info(f"Target workbook: {workbook_id}")
+            logger.info(f"Target worksheet: {worksheet_id}")
+            
+            # Push to workbook using proper round-tripping pattern
+            # Try different workbook parameter formats based on API docs
+            logger.info("Trying workbook push with ID format...")
             
             result = spy.push(
-                metadata=metadata[['Name','Type','ID','Formula','Formula Parameters']], 
+                metadata=combined_metadata,
                 workbook=workbook_id, 
                 worksheet=worksheet_id,
                 errors='catalog',
-                quiet=True  # Working example uses quiet=True
+                quiet=True
             )
             
-            logger.info(f"SPy push result (Method 1): {result}")
+            # Check if the result indicates any issues
+            if 'Push Result' in result.columns:
+                push_results = result['Push Result'].tolist()
+                logger.info(f"Push results: {push_results}")
+                failed_pushes = [r for r in push_results if r != 'Success']
+                if failed_pushes:
+                    logger.warning(f"Some pushes failed: {failed_pushes}")
+            
+            # Check for error messages in result
+            if 'Error' in result.columns:
+                errors = result['Error'].dropna().tolist()
+                if errors:
+                    logger.warning(f"Push errors detected: {errors}")
+            
+            if 'Result' in result.columns:
+                results = result['Result'].dropna().tolist()
+                if results:
+                    logger.info(f"Push results details: {results}")
+            
+            logger.info(f"SPy push result: {result}")
             logger.info(f"SPy push result type: {type(result)}")
-            logger.info(f"SPy push completed successfully - Method 1")
+            logger.info(f"Round-tripping push completed successfully")
             
             # Method 1 succeeded, continue to success response
             
@@ -553,22 +574,22 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             except Exception as workbook_error:
                 logger.warning(f"Method 2 workbook search failed: {workbook_error}")
             
-            # Method 3: Search by signal name globally
-            logger.info(f"Verification Method 3: Global search for new signal")
+            # Method 3: Search for workbook-scoped signal using workbook parameter
+            logger.info(f"Verification Method 3: Workbook-scoped search")
             try:
                 new_signal_name = f"{sensor_name} Copy"
-                global_search = spy.search({'Name': new_signal_name}, quiet=True)
-                logger.info(f"Global search completed. Found {len(global_search)} items with name '{new_signal_name}'")
+                workbook_scoped_search = spy.search({'Name': new_signal_name}, workbook=workbook_id, quiet=True)
+                logger.info(f"Workbook-scoped search completed. Found {len(workbook_scoped_search)} items")
                 
-                if not global_search.empty:
-                    logger.info(f"✅ Method 3 Verified: Signal found globally")
-                    logger.info(f"Global search result: {global_search[['Name', 'Type', 'ID']].to_dict('records')}")
-                    success_response["verification"] = "global_success"
+                if not workbook_scoped_search.empty:
+                    logger.info(f"✅ Method 3 Verified: Signal found in workbook scope")
+                    logger.info(f"Workbook-scoped result: {workbook_scoped_search[['Name', 'Type', 'ID']].to_dict('records')}")
+                    success_response["verification"] = "workbook_scoped_success"
                 else:
-                    logger.warning(f"❌ Method 3: Signal not found in global search")
+                    logger.warning(f"❌ Method 3: Signal not found in workbook-scoped search")
                     
-            except Exception as global_error:
-                logger.warning(f"Method 3 global search failed: {global_error}")
+            except Exception as workbook_scoped_error:
+                logger.warning(f"Method 3 workbook-scoped search failed: {workbook_scoped_error}")
                 
         except Exception as e:
             logger.warning(f"Verification process failed: {e}")
