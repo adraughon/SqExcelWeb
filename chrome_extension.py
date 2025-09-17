@@ -514,25 +514,50 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                         
                         # Pull the workbook and access the worksheet (new API)
                         logger.info(f"Pulling workbook {workbook_id}")
-                        workbook = spy.workbooks.pull(workbook_id)
-                        logger.info(f"Pulled workbook: {type(workbook)}")
+                        workbook_list = spy.workbooks.pull(workbook_id)
+                        logger.info(f"Pulled workbook: {type(workbook_list)}")
+                        
+                        # Extract the actual workbook from the WorkbookList
+                        if hasattr(workbook_list, '__iter__') and len(workbook_list) > 0:
+                            workbook = workbook_list[0]  # Get first (and should be only) workbook
+                            logger.info(f"Extracted workbook from list: {type(workbook)}")
+                        else:
+                            workbook = workbook_list  # Maybe it's already the workbook
                         
                         # Find the worksheet in the workbook
                         logger.info(f"Looking for worksheet {worksheet_id} in workbook")
                         worksheet = None
+                        
+                        # Debug: log workbook attributes
+                        logger.info(f"Workbook attributes: {[attr for attr in dir(workbook) if not attr.startswith('_')]}")
+                        
                         if hasattr(workbook, 'worksheets'):
-                            logger.info(f"Available worksheets: {list(workbook.worksheets.keys()) if workbook.worksheets else 'None'}")
-                            # Try to find worksheet by ID or name
-                            for ws_name, ws_obj in workbook.worksheets.items():
-                                if hasattr(ws_obj, 'id') and ws_obj.id == worksheet_id:
-                                    worksheet = ws_obj
-                                    logger.info(f"Found worksheet by ID: {ws_name}")
-                                    break
+                            worksheets = workbook.worksheets
+                            logger.info(f"Worksheets type: {type(worksheets)}")
                             
-                            # If not found by ID, try first worksheet as fallback
-                            if worksheet is None and workbook.worksheets:
-                                worksheet = list(workbook.worksheets.values())[0]
-                                logger.info(f"Using first available worksheet as fallback: {list(workbook.worksheets.keys())[0]}")
+                            if hasattr(worksheets, 'keys'):
+                                # It's a dict-like object
+                                worksheet_names = list(worksheets.keys())
+                                logger.info(f"Available worksheets: {worksheet_names}")
+                                
+                                # Try to find worksheet by ID or name
+                                for ws_name, ws_obj in worksheets.items():
+                                    logger.info(f"Checking worksheet '{ws_name}': {type(ws_obj)}")
+                                    if hasattr(ws_obj, 'id'):
+                                        logger.info(f"Worksheet '{ws_name}' ID: {ws_obj.id}")
+                                        if ws_obj.id == worksheet_id:
+                                            worksheet = ws_obj
+                                            logger.info(f"✅ Found worksheet by ID: {ws_name}")
+                                            break
+                                
+                                # If not found by ID, try first worksheet as fallback
+                                if worksheet is None and worksheets:
+                                    worksheet = list(worksheets.values())[0]
+                                    logger.info(f"⚠️ Using first available worksheet as fallback: {worksheet_names[0]}")
+                            else:
+                                logger.warning(f"Worksheets object doesn't have keys() method: {type(worksheets)}")
+                        else:
+                            logger.error("Workbook doesn't have 'worksheets' attribute")
                         
                         if worksheet is None:
                             logger.error("Could not find worksheet in workbook")
