@@ -34,6 +34,7 @@ CORS(app, origins=[
     'https://*.microsoft.com',
     'https://*.office365.com',
     'https://*.seeq.tech',
+    'https://talosenergy.seeq.tech'
 ])
 
 # Security: Define trusted domains for SSL bypass (if needed)
