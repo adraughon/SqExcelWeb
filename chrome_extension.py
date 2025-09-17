@@ -363,44 +363,48 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # Try a different approach: just push the new signal directly
-        # This mimics what Seeq Workbench does when you drag a signal to a worksheet
+        # Use the exact pattern from the working example
         logger.info(f"Signal to add: {signal_to_add.to_dict('records')}")
         
         try:
-            logger.info(f"Pushing new StoredSignal directly to workbook {workbook_id}, worksheet {worksheet_id}")
+            logger.info(f"Using exact pattern from working example")
             
-            # First, try pushing just the new signal
-            result = spy.push(
-                metadata=signal_to_add, 
-                workbook=workbook_id, 
-                worksheet=worksheet_id,
-                errors='catalog',
-                quiet=False  # Let's see any errors
-            )
+            # Combine current signals with new signal (exactly like working example)
+            metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
+            metadata = metadata.drop_duplicates(subset=['ID'])
             
-            logger.info(f"SPy push result: {result}")
+            logger.info(f"Combined metadata shape: {metadata.shape}")
+            logger.info(f"Combined metadata has columns: {list(metadata.columns)}")
             
-            # If that doesn't work, try the combined approach
-            if result is None or (hasattr(result, 'empty') and result.empty):
-                logger.info("Direct push didn't work, trying combined metadata approach")
-                
-                # Combine current signals with the signal to add
-                metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
-                metadata = metadata.drop_duplicates(subset=['ID'])
-                
-                logger.info(f"Combined metadata shape: {metadata.shape}")
-                logger.info(f"Combined metadata columns: {list(metadata.columns)}")
-                
+            # Extract only the columns that are common to both StoredSignals
+            # Based on your working example, try with minimal required columns first
+            essential_columns = ['Name', 'Type', 'ID']
+            
+            # Check which essential columns exist
+            available_columns = [col for col in essential_columns if col in metadata.columns]
+            logger.info(f"Available essential columns: {available_columns}")
+            
+            if len(available_columns) >= 3:  # We have Name, Type, ID
+                logger.info(f"Pushing with essential columns: {available_columns}")
                 result = spy.push(
-                    metadata=metadata, 
-                    workbook=workbook_id, 
+                    metadata=metadata[available_columns],
+                    workbook=workbook_id,
                     worksheet=worksheet_id,
                     errors='catalog',
                     quiet=False
                 )
-                
-                logger.info(f"Combined push result: {result}")
+            else:
+                logger.info("Pushing with all available columns")
+                result = spy.push(
+                    metadata=metadata,
+                    workbook=workbook_id,
+                    worksheet=worksheet_id,
+                    errors='catalog',
+                    quiet=False
+                )
+            
+            logger.info(f"SPy push result: {result}")
+            logger.info(f"SPy push result type: {type(result)}")
             
             logger.info(f"SPy push completed successfully")
             
