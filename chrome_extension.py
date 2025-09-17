@@ -410,8 +410,22 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             logger.info(f"New calculated signal metadata: {new_signal_metadata.to_dict('records')}")
             
             # Step 2: Combine with existing worksheet items (round-tripping pattern)
-            # Important: Keep ALL columns from all_properties=True search
+            # CRITICAL: The new signal must have the same columns as existing worksheet items
+            # to be properly added to the worksheet display
             if not current_signals.empty:
+                # Get the column structure from existing worksheet items
+                worksheet_columns = current_signals.columns.tolist()
+                logger.info(f"Worksheet columns structure: {worksheet_columns}")
+                
+                # Fill the new signal metadata with NaN for missing columns
+                for col in worksheet_columns:
+                    if col not in new_signal_metadata.columns:
+                        new_signal_metadata[col] = pd.NA
+                
+                # Reorder new signal columns to match worksheet structure
+                new_signal_metadata = new_signal_metadata.reindex(columns=worksheet_columns)
+                logger.info(f"New signal metadata aligned to worksheet structure")
+                
                 # Concatenate preserving all original columns
                 combined_metadata = pd.concat([current_signals, new_signal_metadata], 
                                             ignore_index=True, sort=False)
@@ -460,8 +474,15 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 if results:
                     logger.info(f"Push results details: {results}")
             
+            logger.info(f"SPy push result shape: {result.shape}")
+            logger.info(f"SPy push result columns: {list(result.columns)}")
+            
+            # Log the new signal details from push result
+            if len(result) >= 2:
+                new_signal_result = result.iloc[1]  # Second row should be our new signal
+                logger.info(f"New signal from push result: Name={new_signal_result.get('Name', 'N/A')}, ID={new_signal_result.get('ID', 'N/A')}, Type={new_signal_result.get('Type', 'N/A')}")
+            
             logger.info(f"SPy push result: {result}")
-            logger.info(f"SPy push result type: {type(result)}")
             logger.info(f"Round-tripping push completed successfully")
             
             # Method 1 succeeded, continue to success response
