@@ -24,7 +24,11 @@ app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = secrets.token_hex(32)
 
+# Register Chrome extension Blueprint
+app.register_blueprint(chrome_bp)
+
 # Security: Restrict CORS to specific trusted origins
+# This applies to all routes including Blueprint routes
 CORS(app, origins=[
     'https://adraughon.github.io',
     'https://*.office.com',
@@ -32,11 +36,6 @@ CORS(app, origins=[
     'https://*.office365.com',
     'https://*.seeq.tech',
 ])
-
-# Note: CORS for Blueprint routes will be handled manually in the route handlers
-
-# Register Chrome extension Blueprint
-app.register_blueprint(chrome_bp)
 
 # Security: Define trusted domains for SSL bypass (if needed)
 TRUSTED_DOMAINS = [

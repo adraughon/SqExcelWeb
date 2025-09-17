@@ -3,7 +3,7 @@ Chrome Extension functionality for SqSearch
 Handles session-based authentication and signal injection into Seeq workbooks
 """
 
-from flask import Blueprint, request, jsonify, make_response
+from flask import Blueprint, request, jsonify
 import traceback
 import logging
 from typing import Dict, Any
@@ -14,64 +14,6 @@ chrome_bp = Blueprint('chrome_extension', __name__, url_prefix='/api/chrome')
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# CORS headers for Chrome extension routes
-ALLOWED_ORIGINS = [
-    'https://adraughon.github.io',
-    'https://*.seeq.tech',
-    'https://*.office.com',
-    'https://*.microsoft.com',
-    'https://*.office365.com'
-]
-
-def add_cors_headers(response):
-    """Add CORS headers to response"""
-    origin = request.headers.get('Origin')
-    logger.info(f"CORS: Processing request from origin: {origin}")
-    
-    # Always allow talosenergy.seeq.tech specifically
-    if origin == 'https://talosenergy.seeq.tech':
-        response.headers['Access-Control-Allow-Origin'] = origin
-        logger.info(f"CORS: Allowed origin {origin} (specific match)")
-    # Check other allowed origins
-    elif origin:
-        for allowed in ALLOWED_ORIGINS:
-            if allowed.startswith('https://*.'):
-                # Handle wildcard domains like https://*.seeq.tech
-                domain_suffix = allowed[9:]  # Remove 'https://*'
-                if origin.endswith(domain_suffix):
-                    response.headers['Access-Control-Allow-Origin'] = origin
-                    logger.info(f"CORS: Allowed origin {origin} (wildcard match: {allowed})")
-                    break
-            elif origin == allowed:
-                response.headers['Access-Control-Allow-Origin'] = origin
-                logger.info(f"CORS: Allowed origin {origin} (exact match)")
-                break
-        else:
-            logger.warning(f"CORS: Origin {origin} not in allowed list: {ALLOWED_ORIGINS}")
-    
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
-    
-    logger.info(f"CORS: Set headers - Origin: {response.headers.get('Access-Control-Allow-Origin')}")
-    return response
-
-@chrome_bp.after_request
-def after_request(response):
-    """Add CORS headers to all responses"""
-    logger.info(f"CORS: Adding headers to response for {request.method} {request.path}")
-    return add_cors_headers(response)
-
-@chrome_bp.before_request
-def handle_preflight():
-    """Handle preflight OPTIONS requests"""
-    if request.method == "OPTIONS":
-        logger.info(f"CORS: Handling preflight OPTIONS request from {request.headers.get('Origin')} to {request.path}")
-        response = make_response('', 200)
-        response = add_cors_headers(response)
-        logger.info(f"CORS: Preflight response headers: {dict(response.headers)}")
-        return response
 
 def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str, 
                                   ignore_ssl_errors: bool = False) -> Dict[str, Any]:
