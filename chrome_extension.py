@@ -398,6 +398,20 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             # Step 1: Create new calculated signal metadata (following SPy docs for calculated items)
             new_signal_name = f"{sensor_name} Copy"
+            
+            # Check if signal already exists to avoid conflicts
+            logger.info(f"Checking if signal '{new_signal_name}' already exists...")
+            try:
+                existing_signal_check = spy.search({'Name': new_signal_name}, workbook=workbook_id, quiet=True)
+                if not existing_signal_check.empty:
+                    logger.warning(f"Signal '{new_signal_name}' already exists. Using unique name.")
+                    import time
+                    timestamp = int(time.time())
+                    new_signal_name = f"{sensor_name} Copy {timestamp}"
+                    logger.info(f"Using unique name: {new_signal_name}")
+            except Exception as name_check_error:
+                logger.warning(f"Could not check for existing signal: {name_check_error}")
+            
             new_signal_metadata = pd.DataFrame([{
                 'Name': new_signal_name,
                 'Type': 'Signal',  # Calculated signal type
@@ -418,11 +432,19 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 logger.info(f"Worksheet columns structure: {worksheet_columns}")
                 
                 # Fill the new signal metadata with NaN for missing columns
+                # BUT preserve Formula and Formula Parameters for calculated signals
                 for col in worksheet_columns:
                     if col not in new_signal_metadata.columns:
                         new_signal_metadata[col] = pd.NA
                 
-                # Reorder new signal columns to match worksheet structure
+                # CRITICAL: Ensure Formula and Formula Parameters are preserved
+                formula_columns = ['Formula', 'Formula Parameters']
+                for formula_col in formula_columns:
+                    if formula_col in new_signal_metadata.columns and formula_col not in worksheet_columns:
+                        worksheet_columns.append(formula_col)
+                        logger.info(f"Added {formula_col} to worksheet columns to preserve calculated signal")
+                
+                # Reorder new signal columns to match enhanced worksheet structure
                 new_signal_metadata = new_signal_metadata.reindex(columns=worksheet_columns)
                 logger.info(f"New signal metadata aligned to worksheet structure")
                 
