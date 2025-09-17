@@ -32,7 +32,8 @@ CORS(app, origins=[
     'https://adraughon.github.io',
     'https://*.office.com',
     'https://*.microsoft.com',
-    'https://*.office365.com'
+    'https://*.office365.com',
+    'https://*.seeq.tech',
 ])
 
 # Security: Define trusted domains for SSL bypass (if needed)

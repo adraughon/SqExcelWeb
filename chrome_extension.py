@@ -74,12 +74,31 @@ def authenticate_seeq_with_session(url: str, auth_token: str, csrf_token: str,
         try:
             with redirect_stdout(io.StringIO()):
                 # Attempt to login using session tokens
-                spy.login(
-                    url=url,
-                    auth_token=auth_token,
-                    csrf_token=csrf_token,
-                    ignore_ssl_errors=ignore_ssl_errors
-                )
+                if auth_token and auth_token != csrf_token:
+                    # We have a distinct auth token
+                    spy.login(
+                        url=url,
+                        auth_token=auth_token,
+                        csrf_token=csrf_token,
+                        ignore_ssl_errors=ignore_ssl_errors
+                    )
+                else:
+                    # Try with just CSRF token or no explicit auth token
+                    # Some Seeq setups might work with just CSRF token
+                    try:
+                        spy.login(
+                            url=url,
+                            csrf_token=csrf_token,
+                            ignore_ssl_errors=ignore_ssl_errors
+                        )
+                    except Exception as csrf_only_error:
+                        # If that fails, try with the CSRF token as auth token
+                        spy.login(
+                            url=url,
+                            auth_token=csrf_token,
+                            csrf_token=csrf_token,
+                            ignore_ssl_errors=ignore_ssl_errors
+                        )
         except Exception as login_error:
             return {
                 "success": False,
@@ -393,15 +412,45 @@ def search_with_session():
         auth_token = None
         if seeq_cookies:
             import re
-            auth_match = re.search(r'sq-auth=([^;]+)', seeq_cookies)
-            if auth_match:
-                auth_token = auth_match.group(1)
+            # Try multiple possible auth token patterns
+            auth_patterns = [
+                r'sq-auth=([^;]+)',
+                r'session-id=([^;]+)',
+                r'sessionId=([^;]+)',
+                r'JSESSIONID=([^;]+)',
+                r'auth-token=([^;]+)',
+                r'authToken=([^;]+)',
+                r'seeq-auth=([^;]+)',
+                r'seeqAuth=([^;]+)'
+            ]
+            
+            for pattern in auth_patterns:
+                auth_match = re.search(pattern, seeq_cookies)
+                if auth_match:
+                    auth_token = auth_match.group(1)
+                    break
         
-        if not auth_token or not csrf_token:
+        # If no auth token found, try using CSRF token as fallback
+        if not auth_token and csrf_token:
+            auth_token = csrf_token
+            logger.info("Using CSRF token as auth token fallback")
+        
+        # For Seeq, we might need to try authentication without explicit auth token
+        # Some Seeq setups use session-based auth differently
+        if not auth_token:
+            logger.warning("No auth token found, attempting authentication with CSRF token only")
+            # We'll try to authenticate with just the CSRF token and see if SPy can handle it
+        
+        if not csrf_token:
             return jsonify({
                 "success": False,
-                "message": "Missing authentication tokens",
-                "error": "sq-auth or csrf token not found in cookies"
+                "message": "Missing CSRF token",
+                "error": "CSRF token is required for Seeq authentication",
+                "debug_info": {
+                    "csrf_token_present": bool(csrf_token),
+                    "auth_token_present": bool(auth_token),
+                    "cookie_count": len(seeq_cookies.split(';')) if seeq_cookies else 0
+                }
             }), 401
         
         # Use session-based authentication with SPy
@@ -445,15 +494,38 @@ def add_signal_to_worksheet_endpoint():
         auth_token = None
         if seeq_cookies:
             import re
-            auth_match = re.search(r'sq-auth=([^;]+)', seeq_cookies)
-            if auth_match:
-                auth_token = auth_match.group(1)
+            # Try multiple possible auth token patterns
+            auth_patterns = [
+                r'sq-auth=([^;]+)',
+                r'session-id=([^;]+)',
+                r'sessionId=([^;]+)',
+                r'JSESSIONID=([^;]+)',
+                r'auth-token=([^;]+)',
+                r'authToken=([^;]+)',
+                r'seeq-auth=([^;]+)',
+                r'seeqAuth=([^;]+)'
+            ]
+            
+            for pattern in auth_patterns:
+                auth_match = re.search(pattern, seeq_cookies)
+                if auth_match:
+                    auth_token = auth_match.group(1)
+                    break
         
-        if not auth_token or not csrf_token:
+        # If no auth token found, try using CSRF token as fallback
+        if not auth_token and csrf_token:
+            auth_token = csrf_token
+            logger.info("Using CSRF token as auth token fallback")
+        
+        # For Seeq, we might need to try authentication without explicit auth token
+        if not auth_token:
+            logger.warning("No auth token found, attempting authentication with CSRF token only")
+        
+        if not csrf_token:
             return jsonify({
                 "success": False,
-                "message": "Missing authentication tokens",
-                "error": "sq-auth or csrf token not found in cookies"
+                "message": "Missing CSRF token",
+                "error": "CSRF token is required for Seeq authentication"
             }), 401
         
         # Add signal to worksheet using session authentication
