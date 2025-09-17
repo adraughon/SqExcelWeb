@@ -27,14 +27,25 @@ app.secret_key = secrets.token_hex(32)
 # Register Chrome extension Blueprint
 app.register_blueprint(chrome_bp)
 
-# Security: Apply CORS to entire app (including Blueprint routes) after registration
-CORS(app, origins=[
-    'https://adraughon.github.io',
-    'https://*.office.com',
-    'https://*.microsoft.com',
-    'https://*.office365.com',
-    'https://*.seeq.tech',
-], supports_credentials=True)
+def is_valid_origin(origin):
+    """Validate if the origin is from an allowed domain pattern"""
+    allowed_patterns = [
+        r'^https://adraughon\.github\.io$',
+        r'^https://.*\.office\.com$',
+        r'^https://.*\.microsoft\.com$', 
+        r'^https://.*\.office365\.com$',
+        r'^https://.*\.seeq\.tech$',  # This will match any subdomain of seeq.tech
+    ]
+    
+    for pattern in allowed_patterns:
+        if re.match(pattern, origin):
+            return True
+    return False
+
+# Apply CORS with custom origin validation
+CORS(app, 
+     origins=is_valid_origin,  # Pass the function directly
+     supports_credentials=True)
 
 # Security: Define trusted domains for SSL bypass (if needed)
 TRUSTED_DOMAINS = [
