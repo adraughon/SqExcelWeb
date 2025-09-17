@@ -33,14 +33,7 @@ CORS(app, origins=[
     'https://*.seeq.tech',
 ])
 
-# Apply CORS to the Chrome extension Blueprint before registering it
-CORS(chrome_bp, origins=[
-    'https://adraughon.github.io',
-    'https://*.office.com',
-    'https://*.microsoft.com',
-    'https://*.office365.com',
-    'https://*.seeq.tech',
-])
+# Note: CORS for Blueprint routes will be handled manually in the route handlers
 
 # Register Chrome extension Blueprint
 app.register_blueprint(chrome_bp)
