@@ -487,6 +487,7 @@ def add_signal_to_worksheet_endpoint():
         worksheet_id = data.get('worksheetId')
         seeq_cookies = data.get('seeqCookies', '')
         csrf_token = data.get('csrfToken', '')
+        auth_token_explicit = data.get('authToken', '')  # Explicitly sent auth token from Chrome API
         formula = data.get('formula')  # Optional custom formula
         formula_params = data.get('formulaParams')  # Optional custom formula parameters
         
@@ -494,6 +495,7 @@ def add_signal_to_worksheet_endpoint():
         logger.info(f"Chrome extension request - URL: {seeq_url}, Sensor: {sensor_name}")
         logger.info(f"Chrome extension request - Workbook: {workbook_id}, Worksheet: {worksheet_id}")
         logger.info(f"Chrome extension request - Cookies length: {len(seeq_cookies)}, CSRF token: {csrf_token[:10]}..." if csrf_token else "No CSRF token")
+        logger.info(f"Chrome extension request - Explicit auth token: {auth_token_explicit[:10]}..." if auth_token_explicit else "No explicit auth token")
         logger.info(f"Chrome extension request - Cookie preview: {seeq_cookies[:200]}..." if seeq_cookies else "No cookies")
         
         if not all([seeq_url, sensor_name, workbook_id, worksheet_id]):
@@ -503,11 +505,15 @@ def add_signal_to_worksheet_endpoint():
                 "error": "Missing seeqUrl, sensorName, workbookId, or worksheetId"
             }), 400
         
-        # Extract auth token from cookies
+        # Use explicitly sent auth token first, then extract from cookies as fallback
         auth_token = None
-        if seeq_cookies:
+        
+        if auth_token_explicit:
+            auth_token = auth_token_explicit
+            logger.info(f"Using explicitly sent auth token from Chrome API: {auth_token[:10]}...")
+        elif seeq_cookies:
             import re
-            # Try multiple possible auth token patterns
+            # Try multiple possible auth token patterns in cookies
             auth_patterns = [
                 r'sq-auth=([^;]+)',
                 r'session-id=([^;]+)',
