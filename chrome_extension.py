@@ -274,25 +274,19 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "error": "Authentication state issue"
             }
         
-        # Get current worksheet items to understand the structure
+        # Get worksheet info for response (but don't fail if we can't get it)
         try:
-            current_signals = spy.search({'ID': worksheet_id}, quiet=True)
-            if current_signals.empty:
-                return {
-                    "success": False,
-                    "message": f"Worksheet {worksheet_id} not found or not accessible",
-                    "error": "Worksheet not found"
-                }
-            
-            worksheet_name = current_signals['Name'].iloc[0] if 'Name' in current_signals.columns and len(current_signals) > 0 else f"Worksheet {worksheet_id}"
-            logger.info(f"Found worksheet: {worksheet_name}")
+            worksheet_info = spy.search({'ID': worksheet_id}, quiet=True)
+            if not worksheet_info.empty and 'Name' in worksheet_info.columns:
+                worksheet_name = worksheet_info['Name'].iloc[0]
+                logger.info(f"Found worksheet: {worksheet_name}")
+            else:
+                worksheet_name = f"Worksheet {worksheet_id}"
+                logger.info(f"Using default worksheet name: {worksheet_name}")
             
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Failed to access worksheet: {str(e)}",
-                "error": "Worksheet access failed"
-            }
+            logger.warning(f"Could not get worksheet info: {e}")
+            worksheet_name = f"Worksheet {worksheet_id}"
         
         # Search for the sensor to get its ID
         try:
@@ -370,12 +364,13 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             logger.warning(f"SPy utilities failed: {spy_utils_error}")
             logger.info("Continuing with Chrome-parsed IDs")
         
-        # Get all current items in the worksheet using ROUND-TRIPPING pattern from SPy docs
+        # CRITICAL: Follow the EXACT working script pattern
+        logger.info("=== FOLLOWING EXACT WORKING SCRIPT PATTERN ===")
+        
+        # Step 1: Get current worksheet items using worksheet URL (like working script)
         try:
             logger.info(f"Getting current worksheet items using URL: {worksheet_url}")
-            
-            # CRITICAL: Use all_properties=True for round-tripping pattern (from SPy docs)
-            current_signals = spy.search(worksheet_url, all_properties=True, quiet=True)
+            current_signals = spy.search(worksheet_url, quiet=True)  # Direct URL search like working script
             logger.info(f"Found {len(current_signals)} existing worksheet items")
             
             if not current_signals.empty:
@@ -390,13 +385,8 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # EXACT ROUND-TRIPPING PATTERN from SPy docs and working script
-        logger.info(f"Original signal to add: {signal_to_add.to_dict('records')}")
-        
+        # Step 2: Create new signal exactly like working script
         try:
-            logger.info("=== ROUND-TRIPPING PATTERN: Following SPy docs exactly ===")
-            
-            # Step 1: Create new calculated signal metadata (following SPy docs for calculated items)
             new_signal_name = f"{sensor_name} Copy"
             
             # Check if signal already exists to avoid conflicts
@@ -412,7 +402,8 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             except Exception as name_check_error:
                 logger.warning(f"Could not check for existing signal: {name_check_error}")
             
-            new_signal_metadata = pd.DataFrame([{
+            # Create new signal DataFrame exactly like working script
+            new_signal = pd.DataFrame([{
                 'Name': new_signal_name,
                 'Type': 'Signal',  # Calculated signal type
                 'Formula': '$s',   # Simple formula referencing original signal
@@ -421,84 +412,46 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 }
             }])
             
-            logger.info(f"New calculated signal metadata: {new_signal_metadata.to_dict('records')}")
+            logger.info(f"New signal metadata: {new_signal.to_dict('records')}")
             
-            # Step 2: Combine with existing worksheet items (round-tripping pattern)
-            # CRITICAL: The new signal must have the same columns as existing worksheet items
-            # to be properly added to the worksheet display
-            if not current_signals.empty:
-                # Get the column structure from existing worksheet items
-                worksheet_columns = current_signals.columns.tolist()
-                logger.info(f"Worksheet columns structure: {worksheet_columns}")
-                
-                # Fill the new signal metadata with NaN for missing columns
-                # BUT preserve Formula and Formula Parameters for calculated signals
-                for col in worksheet_columns:
-                    if col not in new_signal_metadata.columns:
-                        new_signal_metadata[col] = pd.NA
-                
-                # CRITICAL: Ensure Formula and Formula Parameters are preserved
-                formula_columns = ['Formula', 'Formula Parameters']
-                for formula_col in formula_columns:
-                    if formula_col in new_signal_metadata.columns and formula_col not in worksheet_columns:
-                        worksheet_columns.append(formula_col)
-                        logger.info(f"Added {formula_col} to worksheet columns to preserve calculated signal")
-                
-                # Reorder new signal columns to match enhanced worksheet structure
-                new_signal_metadata = new_signal_metadata.reindex(columns=worksheet_columns)
-                logger.info(f"New signal metadata aligned to worksheet structure")
-                
-                # Concatenate preserving all original columns
-                combined_metadata = pd.concat([current_signals, new_signal_metadata], 
-                                            ignore_index=True, sort=False)
-            else:
-                combined_metadata = new_signal_metadata
-                
-            # Remove duplicates by ID (new signal has no ID so it will be kept)
-            combined_metadata = combined_metadata.drop_duplicates(subset=['ID'], keep='first')
+            # Step 3: Combine exactly like working script
+            metadata = pd.concat([current_signals, new_signal]).reset_index(drop=True)
+            metadata = metadata.drop_duplicates(subset=['ID'])
             
-            logger.info(f"Combined metadata shape: {combined_metadata.shape}")
-            logger.info(f"Combined metadata columns: {list(combined_metadata.columns)}")
+            logger.info(f"Combined metadata shape: {metadata.shape}")
+            logger.info(f"Combined metadata columns: {list(metadata.columns)}")
             
-            # Step 3: Push using exact SPy docs pattern for calculated items
-            logger.info("Pushing calculated signal using SPy docs pattern...")
+            # Step 4: Push using EXACT working script pattern with EXACT columns
+            logger.info("Pushing using exact working script pattern...")
             logger.info(f"Target workbook: {workbook_id}")
             logger.info(f"Target worksheet: {worksheet_id}")
             
-            # Push to workbook using proper round-tripping pattern
-            # CRITICAL INSIGHT: Maybe we need to push ONLY the new signal, not combined metadata
-            logger.info("Trying to push ONLY the new signal to worksheet...")
+            # CRITICAL: Use exact same columns as working script
+            push_columns = ['Name','Type','ID','Formula','Formula Parameters']
+            available_columns = [col for col in push_columns if col in metadata.columns]
+            logger.info(f"Available push columns: {available_columns}")
             
-            # EXPERIMENT: Try different push approaches to get signal in worksheet
-            logger.info("=== EXPERIMENT 1: Push new signal only with worksheet ===")
-            result1 = spy.push(
-                metadata=new_signal_metadata,  # Just the new signal
-                workbook=workbook_id, 
-                worksheet=worksheet_id,
-                errors='catalog',
-                quiet=True
-            )
-            logger.info(f"Experiment 1 result: {result1['Push Result'].tolist() if 'Push Result' in result1.columns else 'No Push Result column'}")
-            
-            logger.info("=== EXPERIMENT 2: Push new signal only without worksheet ===")
-            result2 = spy.push(
-                metadata=new_signal_metadata,  # Just the new signal
-                workbook=workbook_id, 
-                # worksheet=worksheet_id,  # Try without worksheet
-                errors='catalog',
-                quiet=True
-            )
-            logger.info(f"Experiment 2 result: {result2['Push Result'].tolist() if 'Push Result' in result2.columns else 'No Push Result column'}")
-            
-            logger.info("=== EXPERIMENT 3: Push combined metadata (original approach) ===")
-            result = spy.push(
-                metadata=combined_metadata,  # Combined like working example
-                workbook=workbook_id, 
-                worksheet=worksheet_id,
-                errors='catalog',
-                quiet=True
-            )
-            logger.info(f"Experiment 3 result: {result['Push Result'].tolist() if 'Push Result' in result.columns else 'No Push Result column'}")
+            if len(available_columns) >= 3:  # Need at least Name, Type, ID
+                push_metadata = metadata[available_columns]
+                logger.info(f"Pushing metadata with columns: {available_columns}")
+                logger.info(f"Push metadata sample: {push_metadata.tail(1).to_dict('records')}")  # Show the new signal
+                
+                result = spy.push(
+                    metadata=push_metadata, 
+                    workbook=workbook_id, 
+                    worksheet=worksheet_id,
+                    errors='catalog',
+                    quiet=True
+                )
+            else:
+                logger.warning(f"Not enough required columns available. Using all columns.")
+                result = spy.push(
+                    metadata=metadata, 
+                    workbook=workbook_id, 
+                    worksheet=worksheet_id,
+                    errors='catalog',
+                    quiet=True
+                )
             
             # Check if the result indicates any issues
             if 'Push Result' in result.columns:
@@ -524,61 +477,19 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             # Log the new signal details from push result
             if len(result) >= 2:
-                new_signal_result = result.iloc[1]  # Second row should be our new signal
+                new_signal_result = result.iloc[-1]  # Last row should be our new signal
                 logger.info(f"New signal from push result: Name={new_signal_result.get('Name', 'N/A')}, ID={new_signal_result.get('ID', 'N/A')}, Type={new_signal_result.get('Type', 'N/A')}")
             
-            logger.info(f"SPy push result: {result}")
-            logger.info(f"Round-tripping push completed successfully")
+            logger.info(f"Working script pattern push completed successfully")
             
-            # Method 1 succeeded, continue to success response
+            # Success - continue to response
             
-        except Exception as method1_error:
-            logger.error(f"Method 1 failed: {method1_error}")
-            logger.info("=== METHOD 2: Fallback to original approach ===")
-            
-            try:
-                # Combine current signals with new signal (original approach)
-                metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
-                metadata = metadata.drop_duplicates(subset=['ID'])
-                
-                logger.info(f"Fallback metadata shape: {metadata.shape}")
-                logger.info(f"Fallback metadata columns: {list(metadata.columns)}")
-                
-                # Try with minimal columns
-                essential_columns = ['Name', 'Type', 'ID']
-                available_columns = [col for col in essential_columns if col in metadata.columns]
-                logger.info(f"Available essential columns: {available_columns}")
-                
-                if len(available_columns) >= 3:
-                    logger.info(f"Pushing with essential columns: {available_columns}")
-                    result = spy.push(
-                        metadata=metadata[available_columns],
-                        workbook=workbook_id,
-                        worksheet=worksheet_id,
-                        errors='catalog',
-                        quiet=False
-                    )
-                else:
-                    logger.info("Pushing with all available columns")
-                    result = spy.push(
-                        metadata=metadata,
-                        workbook=workbook_id,
-                        worksheet=worksheet_id,
-                        errors='catalog',
-                        quiet=False
-                    )
-                
-                logger.info(f"SPy push result (Method 2): {result}")
-                logger.info(f"SPy push result type: {type(result)}")
-                
-            except Exception as method2_error:
-                logger.error(f"Method 2 also failed: {method2_error}")
-                raise method2_error
-            
-            logger.info(f"SPy push completed successfully - Method 2")
+        except Exception as working_script_error:
+            logger.error(f"Working script pattern failed: {working_script_error}")
+            logger.error(f"Error details: {traceback.format_exc()}")
+            raise working_script_error
         
-        # Both Method 1 and Method 2 reach here if successful
-        logger.info(f"SPy push completed successfully")
+        logger.info(f"Working script pattern completed successfully")
         
         # Prepare success response FIRST (before verification that might fail)
         success_response = {
