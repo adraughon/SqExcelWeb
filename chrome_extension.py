@@ -318,15 +318,11 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
                 "error": "Sensor search failed"
             }
         
-  # Default parameter mapping
-        
-        # Generate a unique name for the new signal
-        new_signal_name = f"{sensor_name} Copy"
-        
-        # Create the new signal metadata
-        new_signal = pd.DataFrame([{
-            'Name': new_signal_name,
-            'Type': 'StoredSignal',
+        # We're adding the existing StoredSignal directly to the worksheet
+        # Just create a minimal reference to add it to the worksheet
+        signal_to_add = pd.DataFrame([{
+            'Name': sensor_name,
+            'Type': 'StoredSignal', 
             'ID': sensor_id
         }])
         
@@ -352,20 +348,21 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             # Create empty DataFrame with expected columns if search fails
             current_signals = pd.DataFrame(columns=['Name', 'Type', 'ID', 'Formula', 'Formula Parameters'])
         
-        # Combine current signals with new signal (exactly like the working example)
-        metadata = pd.concat([current_signals, new_signal]).reset_index(drop=True)
+        # Combine current signals with the signal to add
+        metadata = pd.concat([current_signals, signal_to_add]).reset_index(drop=True)
         metadata = metadata.drop_duplicates(subset=['ID'])
         
         logger.info(f"Final metadata shape: {metadata.shape}")
         logger.info(f"Final metadata columns: {list(metadata.columns)}")
-        logger.info(f"New signal in metadata: {new_signal.to_dict('records')}")
+        logger.info(f"Signal to add: {signal_to_add.to_dict('records')}")
         
-        # Push the new signal to the worksheet (exactly like the working example)
+        # For StoredSignals, we only need Name, Type, and ID
+        # Push the signal to the worksheet
         try:
-            logger.info(f"Pushing signal to workbook {workbook_id}, worksheet {worksheet_id}")
+            logger.info(f"Pushing StoredSignal to workbook {workbook_id}, worksheet {worksheet_id}")
             
             result = spy.push(
-                metadata=metadata[['Name', 'Type', 'ID', 'Formula', 'Formula Parameters']], 
+                metadata=metadata, 
                 workbook=workbook_id, 
                 worksheet=worksheet_id,
                 errors='catalog',
@@ -376,15 +373,13 @@ def add_signal_to_worksheet(url: str, auth_token: str, csrf_token: str,
             
             return {
                 "success": True,
-                "message": f"Successfully added signal '{new_signal_name}' to worksheet '{worksheet_name}'",
-                "signal_name": new_signal_name,
+                "message": f"Successfully added StoredSignal '{sensor_name}' to worksheet '{worksheet_name}'",
+                "signal_name": sensor_name,
                 "sensor_name": sensor_name,
                 "sensor_id": sensor_id,
                 "workbook_id": workbook_id,
                 "worksheet_id": worksheet_id,
                 "worksheet_name": worksheet_name,
-                "formula": formula,
-                "formula_params": formula_params,
                 "user": str(spy.user)
             }
             
