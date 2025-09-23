@@ -133,6 +133,36 @@ auth_state = {
 # Note: In production, consider using Redis or a database for better scalability
 temp_credentials = None
 
+# Configure SPy default options at import time for improved parallelism/timesouts
+if SPY_AVAILABLE and spy is not None:
+    try:
+        # Respect env overrides when present
+        import os
+        max_req = int(os.environ.get('SPY_MAX_CONCURRENT_REQUESTS', '8'))
+        req_to = int(os.environ.get('SPY_REQUEST_TIMEOUT', '30'))
+        retry_to = int(os.environ.get('SPY_RETRY_TIMEOUT', '10'))
+        compat = int(os.environ.get('SPY_COMPATIBILITY', '188'))
+
+        if hasattr(spy, 'options'):
+            try:
+                spy.options.max_concurrent_requests = max_req
+            except Exception:
+                pass
+            try:
+                spy.options.request_timeout_in_seconds = req_to
+            except Exception:
+                pass
+            try:
+                spy.options.retry_timeout_in_seconds = retry_to
+            except Exception:
+                pass
+            try:
+                spy.options.compatibility = compat
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 
 def authenticate_seeq(url: str, access_key: str, password: str, 
                      auth_provider: str = 'Seeq', 
