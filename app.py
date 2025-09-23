@@ -10,8 +10,6 @@ from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-# Import Chrome extension functionality
-from chrome_extension import chrome_bp
 
 # Configure logging for production
 logging.basicConfig(
@@ -24,8 +22,6 @@ app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = secrets.token_hex(32)
 
-# Register Chrome extension Blueprint
-app.register_blueprint(chrome_bp)
 
 # Security: Apply CORS to entire app (including Blueprint routes) after registration
 CORS(app, origins=[
@@ -175,6 +171,25 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         }
     
     try:
+        # Fast path: if already authenticated to the same server with the same credentials, skip re-login
+        try:
+            if SPY_AVAILABLE and spy is not None and spy.user is not None:
+                if (
+                    auth_state.get('is_authenticated') and
+                    auth_state.get('url') == url and
+                    auth_state.get('access_key') == access_key and
+                    auth_state.get('password') == password and
+                    auth_state.get('auth_provider') == auth_provider and
+                    auth_state.get('ignore_ssl_errors') == (ignore_ssl_errors if isinstance(ignore_ssl_errors, bool) else str(ignore_ssl_errors).lower() in ('true','1','yes','on'))
+                ):
+                    return {
+                        "success": True,
+                        "message": f"Using existing authentication for {spy.user}",
+                        "user": str(spy.user),
+                        "server_url": url
+                    }
+        except Exception:
+            pass
         # Suppress SPy output by redirecting stdout temporarily
         import io
         import sys
@@ -213,12 +228,14 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         # Suppress SPy output during login
         try:
             with redirect_stdout(io.StringIO()):
-                # Attempt to login
+                # Attempt to login (avoid forcing re-login to speed up repeated calls)
                 spy.login(
                     url=url,
                     access_key=access_key,
                     password=password,
-                    ignore_ssl_errors=ignore_ssl_errors
+                    ignore_ssl_errors=ignore_ssl_errors,
+                    force=False,
+                    quiet=True
                 )
         except Exception as login_error:
             return {
