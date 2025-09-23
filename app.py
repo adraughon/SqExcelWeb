@@ -172,53 +172,55 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         }
     
     try:
-        # Fast path: if already authenticated to the same server with the same credentials, skip re-login
-        try:
-            if SPY_AVAILABLE and spy is not None and spy.user is not None:
-                if (
-                    auth_state.get('is_authenticated') and
-                    auth_state.get('url') == url and
-                    auth_state.get('access_key') == access_key and
-                    auth_state.get('password') == password and
-                    auth_state.get('auth_provider') == auth_provider and
-                    auth_state.get('ignore_ssl_errors') == (ignore_ssl_errors if isinstance(ignore_ssl_errors, bool) else str(ignore_ssl_errors).lower() in ('true','1','yes','on'))
-                ):
-                    return {
-                        "success": True,
-                        "message": f"Using existing authentication for {spy.user}",
-                        "user": str(spy.user),
-                        "server_url": url
-                    }
-        except Exception:
-            pass
+        # Fast path: only for global default session (no session_obj passed)
+        if session_obj is None:
+            try:
+                if SPY_AVAILABLE and spy is not None and spy.user is not None:
+                    if (
+                        auth_state.get('is_authenticated') and
+                        auth_state.get('url') == url and
+                        auth_state.get('access_key') == access_key and
+                        auth_state.get('password') == password and
+                        auth_state.get('auth_provider') == auth_provider and
+                        auth_state.get('ignore_ssl_errors') == (ignore_ssl_errors if isinstance(ignore_ssl_errors, bool) else str(ignore_ssl_errors).lower() in ('true','1','yes','on'))
+                    ):
+                        return {
+                            "success": True,
+                            "message": f"Using existing authentication for {spy.user}",
+                            "user": str(spy.user),
+                            "server_url": url
+                        }
+            except Exception:
+                pass
         # Suppress SPy output by redirecting stdout temporarily
         import io
         import sys
         from contextlib import redirect_stdout
         
-        # Set compatibility option for maximum compatibility
+        # Set compatibility option for maximum compatibility on appropriate options object
         try:
-            spy.options.compatibility = 188  # Use minimum required value
-        except AttributeError:
-            # If compatibility option doesn't exist, continue without it
+            options_target = session_obj.options if (session_obj is not None and hasattr(session_obj, 'options')) else getattr(spy, 'options', None)
+            if options_target is not None:
+                options_target.compatibility = 188  # Use minimum required value
+        except Exception:
             pass
         
         # Set timeout options to prevent hanging
         try:
-            spy.options.request_timeout_in_seconds = 30
-            spy.options.retry_timeout_in_seconds = 10
-        except AttributeError:
-            # If timeout options don't exist, continue without them
+            options_target = session_obj.options if (session_obj is not None and hasattr(session_obj, 'options')) else getattr(spy, 'options', None)
+            if options_target is not None:
+                options_target.request_timeout_in_seconds = 30
+                options_target.retry_timeout_in_seconds = 10
+        except Exception:
             pass
         
         # Set the server URL in SPy options before attempting login
         try:
-            if hasattr(spy, 'options') and hasattr(spy.options, 'server'):
-                spy.options.server = url
-            else:
-                pass  # Cannot set server URL
-        except Exception as e:
-            pass  # Ignore errors setting server URL
+            options_target = session_obj.options if (session_obj is not None and hasattr(session_obj, 'options')) else getattr(spy, 'options', None)
+            if options_target is not None and hasattr(options_target, 'server'):
+                options_target.server = url
+        except Exception:
+            pass
         
         # Convert ignore_ssl_errors to proper boolean
         if isinstance(ignore_ssl_errors, str):
@@ -257,7 +259,13 @@ def authenticate_seeq(url: str, access_key: str, password: str,
             }
         
         # Check if login was successful
-        if spy.user is not None:
+        current_user = None
+        try:
+            current_user = getattr(session_obj, 'user', None) if session_obj is not None else getattr(spy, 'user', None)
+        except Exception:
+            current_user = None
+
+        if current_user is not None:
             # Update global state
             auth_state['is_authenticated'] = True
             auth_state['url'] = url
@@ -268,8 +276,8 @@ def authenticate_seeq(url: str, access_key: str, password: str,
             
             return {
                 "success": True,
-                "message": f"Successfully authenticated as {spy.user}",
-                "user": str(spy.user),
+                "message": f"Successfully authenticated as {current_user}",
+                "user": str(current_user),
                 "server_url": url
             }
         else:
