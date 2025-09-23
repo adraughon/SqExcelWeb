@@ -136,7 +136,8 @@ temp_credentials = None
 
 def authenticate_seeq(url: str, access_key: str, password: str, 
                      auth_provider: str = 'Seeq', 
-                     ignore_ssl_errors: bool = False) -> Dict[str, Any]:
+                     ignore_ssl_errors: bool = False,
+                     session_obj: Any = None) -> Dict[str, Any]:
     """
     Authenticate with Seeq server using SPy
     """
@@ -229,14 +230,25 @@ def authenticate_seeq(url: str, access_key: str, password: str,
         try:
             with redirect_stdout(io.StringIO()):
                 # Attempt to login (avoid forcing re-login to speed up repeated calls)
-                spy.login(
-                    url=url,
-                    access_key=access_key,
-                    password=password,
-                    ignore_ssl_errors=ignore_ssl_errors,
-                    force=False,
-                    quiet=True
-                )
+                if session_obj is not None:
+                    spy.login(
+                        url=url,
+                        access_key=access_key,
+                        password=password,
+                        ignore_ssl_errors=ignore_ssl_errors,
+                        force=False,
+                        quiet=True,
+                        session=session_obj
+                    )
+                else:
+                    spy.login(
+                        url=url,
+                        access_key=access_key,
+                        password=password,
+                        ignore_ssl_errors=ignore_ssl_errors,
+                        force=False,
+                        quiet=True
+                    )
         except Exception as login_error:
             return {
                 "success": False,
@@ -280,7 +292,7 @@ def authenticate_seeq(url: str, access_key: str, password: str,
 
 def search_sensors_only(sensor_names: list, url: str = None, access_key: str = None, 
                        password: str = None, auth_provider: str = 'Seeq', 
-                       ignore_ssl_errors: bool = False) -> Dict[str, Any]:
+                       ignore_ssl_errors: bool = False, session_obj: Any = None) -> Dict[str, Any]:
     """
     Search for sensors in Seeq without pulling data
     """
@@ -297,7 +309,7 @@ def search_sensors_only(sensor_names: list, url: str = None, access_key: str = N
         # Always authenticate when called from Excel (new process each time)
         if url and access_key and password:
             # Try to authenticate first
-            auth_result = authenticate_seeq(url, access_key, password, auth_provider, ignore_ssl_errors)
+            auth_result = authenticate_seeq(url, access_key, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
             if not auth_result['success']:
                 return {
                     "success": False,
@@ -327,7 +339,7 @@ def search_sensors_only(sensor_names: list, url: str = None, access_key: str = N
                 result = spy.search({
                     'Name': sensor_name,
                     'Type': 'StoredSignal'
-                }, quiet=True)
+                }, quiet=True, session=session_obj)
                 
                 if not result.empty:
                     # Add the sensor name for reference
@@ -385,7 +397,8 @@ def search_sensors_only(sensor_names: list, url: str = None, access_key: str = N
 def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetime: str, 
                            grid: str = '15min', timezone: str = None, user_timezone: str = None, 
                            url: str = None, access_key: str = None, password: str = None, 
-                           auth_provider: str = 'Seeq', ignore_ssl_errors: bool = False) -> Dict[str, Any]:
+                           auth_provider: str = 'Seeq', ignore_ssl_errors: bool = False,
+                           session_obj: Any = None) -> Dict[str, Any]:
     """
     Search for sensors in Seeq and pull their data
     """
@@ -403,7 +416,7 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
         # Always authenticate when called from Excel (new process each time)
         if url and access_key and password:
             # Try to authenticate first
-            auth_result = authenticate_seeq(url, access_key, password, auth_provider, ignore_ssl_errors)
+            auth_result = authenticate_seeq(url, access_key, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
             
             if not auth_result['success']:
                 return {
@@ -563,7 +576,7 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                 result = spy.search({
                     'Name': sensor_name,
                     'Type': 'StoredSignal'
-                }, quiet=True)
+                }, quiet=True, session=session_obj)
                 
                 if not result.empty:
                     # Add the sensor name for reference
@@ -629,7 +642,8 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
                 end=end_dt,
                 grid=grid,
                 header='Name',  # Use Name for readable column headers
-                quiet=True
+                quiet=True,
+                session=session_obj
             )
             
             # Convert to records for JSON serialization
@@ -881,7 +895,13 @@ def seeq_search():
             }), 500
         
         # Use SPy to search for sensors
-        result = search_sensors_only(sensor_names, seeq_url, username, password, auth_provider, ignore_ssl_errors)
+        try:
+            Session = getattr(spy, 'Session', None) if SPY_AVAILABLE else None
+            session_obj = Session() if Session is not None else None
+        except Exception:
+            session_obj = None
+
+        result = search_sensors_only(sensor_names, seeq_url, username, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
         
         if result['success']:
             return jsonify(result)
@@ -927,7 +947,13 @@ def seeq_data():
         
         # Use SPy to search and pull sensor data
         logger.info(f"Processing data request with user_timezone: {user_timezone}")
-        result = search_and_pull_sensors(sensor_names, start_time, end_time, grid, None, user_timezone, seeq_url, username, password, auth_provider, ignore_ssl_errors)
+        try:
+            Session = getattr(spy, 'Session', None) if SPY_AVAILABLE else None
+            session_obj = Session() if Session is not None else None
+        except Exception:
+            session_obj = None
+
+        result = search_and_pull_sensors(sensor_names, start_time, end_time, grid, None, user_timezone, seeq_url, username, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
         
         if result['success']:
             return jsonify(result)
@@ -1053,7 +1079,13 @@ def search_sensors_excel():
             }), 500
         
         # Use SPy to search for sensors
-        result = search_sensors_only(sensor_names, url, access_key, password, auth_provider, ignore_ssl_errors)
+        try:
+            Session = getattr(spy, 'Session', None) if SPY_AVAILABLE else None
+            session_obj = Session() if Session is not None else None
+        except Exception:
+            session_obj = None
+
+        result = search_sensors_only(sensor_names, url, access_key, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
         
         if result['success']:
             return jsonify(result)
@@ -1103,7 +1135,13 @@ def sensor_data_excel():
         
         # Use SPy to search and pull sensor data
         user_timezone = data.get('userTimezone')
-        result = search_and_pull_sensors(sensor_names, start_datetime, end_datetime, grid, None, user_timezone, url, access_key, password, auth_provider, ignore_ssl_errors)
+        try:
+            Session = getattr(spy, 'Session', None) if SPY_AVAILABLE else None
+            session_obj = Session() if Session is not None else None
+        except Exception:
+            session_obj = None
+
+        result = search_and_pull_sensors(sensor_names, start_datetime, end_datetime, grid, None, user_timezone, url, access_key, password, auth_provider, ignore_ssl_errors, session_obj=session_obj)
         
         if result['success']:
             return jsonify(result)
