@@ -1,1 +1,1 @@
-web: gunicorn --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-4} --timeout ${WEB_TIMEOUT:-180} app:app
+web: gunicorn --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-8} --timeout ${WEB_TIMEOUT:-180} --keep-alive ${WEB_KEEP_ALIVE:-5} --max-requests ${WEB_MAX_REQUESTS:-200} --max-requests-jitter ${WEB_MAX_REQUESTS_JITTER:-50} app:app
