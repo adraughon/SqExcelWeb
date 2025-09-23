@@ -138,7 +138,7 @@ if SPY_AVAILABLE and spy is not None:
     try:
         # Respect env overrides when present
         import os
-        max_req = int(os.environ.get('SPY_MAX_CONCURRENT_REQUESTS', '8'))
+        max_req = int(os.environ.get('SPY_MAX_CONCURRENT_REQUESTS', '16'))
         req_to = int(os.environ.get('SPY_REQUEST_TIMEOUT', '30'))
         retry_to = int(os.environ.get('SPY_RETRY_TIMEOUT', '10'))
         compat = int(os.environ.get('SPY_COMPATIBILITY', '188'))
