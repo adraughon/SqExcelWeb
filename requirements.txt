@@ -6,3 +6,4 @@ seeq
 seeq-spy
 gunicorn
 pytz
+matplotlib

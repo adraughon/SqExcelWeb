@@ -9,6 +9,13 @@ import logging
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 from datetime import datetime
+import base64
+import requests as http
+import os
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 
 # Configure logging for production
@@ -772,6 +779,141 @@ def search_and_pull_sensors(sensor_names: list, start_datetime: str, end_datetim
         }
 
 
+
+# AI endpoint: generate matplotlib images and call GPT-4o-mini
+@app.route('/api/ai/ask', methods=['POST'])
+def ai_ask():
+    try:
+        payload = request.get_json() or {}
+
+        model = payload.get('model', 'gpt-4o-mini')
+        prompt = payload.get('prompt', '')
+        data = payload.get('data', {})
+        matplotlib_cfg = payload.get('matplotlib', {})
+        context = payload.get('context', {})
+        openai_api_key = payload.get('openaiApiKey') or os.environ.get('OPENAI_API_KEY')
+        if not openai_api_key:
+            return jsonify({
+                'success': False,
+                'message': 'Missing OpenAI API key. Provide in request as "openaiApiKey" or set OPENAI_API_KEY env var.'
+            }), 400
+
+        # Validate
+        rows = data.get('rows') or []
+        columns = data.get('columns') or []
+        ts_col = data.get('timestampsColumn') or 'Timestamp'
+        if not rows or not columns:
+            return jsonify({
+                'success': False,
+                'message': 'Missing data rows or columns'
+            }), 400
+
+        # Build per-sensor series
+        # Extract timestamps as strings; convert to pandas-friendly for plotting
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        if ts_col not in df.columns:
+            # Fall back to index or first key
+            if 'index' in df.columns:
+                ts_col = 'index'
+            else:
+                ts_col = df.columns[0]
+
+        # Convert timestamps to datetime
+        try:
+            df['__ts__'] = pd.to_datetime(df[ts_col])
+        except Exception:
+            # try numeric epoch seconds or excel serial
+            try:
+                vals = pd.to_numeric(df[ts_col], errors='coerce')
+                # Heuristic: >1e11 is ms epoch, >1e9 seconds epoch, otherwise Excel serial
+                def to_dt(v):
+                    try:
+                        if pd.isna(v):
+                            return pd.NaT
+                        v = float(v)
+                        if v > 1e11:
+                            return pd.to_datetime(v, unit='ms', utc=True)
+                        if v > 1e9:
+                            return pd.to_datetime(v, unit='s', utc=True)
+                        excel_epoch = pd.Timestamp('1899-12-30')
+                        return excel_epoch + pd.Timedelta(days=v)
+                    except Exception:
+                        return pd.NaT
+                df['__ts__'] = vals.apply(to_dt)
+            except Exception:
+                df['__ts__'] = pd.to_datetime(df[ts_col], errors='coerce')
+
+        # Matplotlib formatting
+        xfmt = matplotlib_cfg.get('xTickFormat', '%Y-%m-%d %H:%M')
+        xrot = int(matplotlib_cfg.get('xTickRotation', 30))
+
+        images_data_urls = []
+        for col in columns:
+            if col not in df.columns:
+                continue
+            try:
+                fig, ax = plt.subplots(figsize=(6, 3))
+                ax.plot(df['__ts__'], df[col], marker='o', markersize=2, linewidth=1.5, alpha=0.9)
+                ax.set_title(str(col))
+                ax.grid(True, alpha=0.3)
+                import matplotlib.dates as mdates
+                ax.xaxis.set_major_formatter(mdates.DateFormatter(xfmt))
+                for label in ax.get_xticklabels():
+                    label.set_rotation(xrot)
+                    label.set_horizontalalignment('right')
+                plt.tight_layout()
+                buf = BytesIO()
+                fig.savefig(buf, format='png', dpi=150)
+                plt.close(fig)
+                buf.seek(0)
+                b64 = base64.b64encode(buf.read()).decode('utf-8')
+                images_data_urls.append(f'data:image/png;base64,{b64}')
+            except Exception as e:
+                logger.warning(f"Failed to generate plot for {col}: {e}")
+
+        # Build OpenAI chat payload with images
+        content = []
+        intro = (
+            f"You are analyzing time-series sensor data. Sensors: {', '.join(columns)}. "
+            f"Time range: {context.get('startDatetime', 'unknown')} to {context.get('endDatetime', 'unknown')}. "
+            f"Grid: {context.get('grid', 'unknown')}.")
+        content.append({"type": "text", "text": intro + "\n\nUser prompt: " + (prompt or '')})
+        for url in images_data_urls:
+            content.append({"type": "image_url", "image_url": {"url": url}})
+
+        headers = {
+            'Authorization': f'Bearer {openai_api_key}',
+            'Content-Type': 'application/json'
+        }
+        body = {
+            'model': model,
+            'messages': [
+                { 'role': 'user', 'content': content }
+            ]
+        }
+
+        resp = http.post('https://api.openai.com/v1/chat/completions', headers=headers, data=json.dumps(body), timeout=60)
+        if resp.status_code != 200:
+            return jsonify({
+                'success': False,
+                'message': 'OpenAI request failed',
+                'status': resp.status_code,
+                'error': resp.text[:500]
+            }), 500
+        data = resp.json()
+        text = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+
+        return jsonify({
+            'success': True,
+            'response': text,
+            'images': images_data_urls,
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'AI processing error: {str(e)}'
+        }), 500
 
 # Hello World endpoints for testing
 @app.route('/')
